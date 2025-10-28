@@ -1,0 +1,3 @@
+@echo off
+echo Starting Timer Program...
+python timer.py

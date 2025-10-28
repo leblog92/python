@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Décompte 10 minutes</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            text-align: center;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 40px;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .message {
+            font-size: 2.5rem;
+            margin-bottom: 30px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .countdown {
+            font-size: 4rem;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 20px 40px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 10px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 5px;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+
+        .progress {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b6b, #ffd93d);
+            width: 100%;
+            transition: width 1s linear;
+        }
+
+        @media (max-width: 768px) {
+            .message {
+                font-size: 2rem;
+            }
+            
+            .countdown {
+                font-size: 3rem;
+                padding: 15px 30px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="message">je reviens d'ici !</div>
+        <div class="countdown" id="countdown">10:00</div>
+        <div class="progress-bar">
+            <div class="progress" id="progress"></div>
+        </div>
+    </div>
+
+    <script>
+        // Durée totale du décompte en secondes (10 minutes)
+        const totalTime = 10 * 60; // 600 secondes
+        let timeLeft = totalTime;
+        
+        const countdownElement = document.getElementById('countdown');
+        const progressElement = document.getElementById('progress');
+
+        function updateCountdown() {
+            // Calcul des minutes et secondes restantes
+            const minutes = Math.floor(timeLeft / 60);
+            const seconds = timeLeft % 60;
+            
+            // Formatage avec zéros devant si nécessaire
+            const formattedTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            
+            // Mise à jour de l'affichage
+            countdownElement.textContent = formattedTime;
+            
+            // Calcul du pourcentage de progression
+            const progressPercentage = ((totalTime - timeLeft) / totalTime) * 100;
+            progressElement.style.width = `${progressPercentage}%`;
+            
+            // Changement de couleur en fonction du temps restant
+            if (timeLeft <= 60) { // Moins d'une minute
+                countdownElement.style.color = '#ff6b6b';
+                progressElement.style.background = 'linear-gradient(90deg, #ff6b6b, #ff4757)';
+            } else if (timeLeft <= 180) { // Moins de 3 minutes
+                countdownElement.style.color = '#ffd93d';
+                progressElement.style.background = 'linear-gradient(90deg, #ffd93d, #ffa502)';
+            }
+            
+            // Décrémentation du temps
+            timeLeft--;
+            
+            // Arrêt du décompte quand il atteint 0
+            if (timeLeft < 0) {
+                clearInterval(countdownInterval);
+                countdownElement.textContent = "00:00";
+                countdownElement.style.color = '#ff4757';
+                progressElement.style.width = '100%';
+                
+                // Animation finale
+                countdownElement.style.animation = 'pulse 1s infinite';
+                
+                // Ajout du style pour l'animation de pulsation
+                const style = document.createElement('style');
+                style.textContent = `
+                    @keyframes pulse {
+                        0% { transform: scale(1); }
+                        50% { transform: scale(1.1); }
+                        100% { transform: scale(1); }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+        }
+
+        // Mise à jour immédiate puis toutes les secondes
+        updateCountdown();
+        const countdownInterval = setInterval(updateCountdown, 1000);
+    </script>
+</body>
+</html>
