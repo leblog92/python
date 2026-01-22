@@ -1,0 +1,250 @@
+import speech_recognition as sr
+import pygame
+import time
+import os
+import threading
+
+class AudioCommandRecognizer:
+    def __init__(self):
+        # Initialiser le recognizer
+        self.recognizer = sr.Recognizer()
+        self.microphone = sr.Microphone()
+        
+        # Initialiser pygame pour l'audio
+        pygame.mixer.init()
+        
+        # Dictionnaire des commandes et fichiers audio associés
+        self.commands = {
+            "au revoir": "sounds/au_revoir.mp3",
+            "expire": "sounds/expire.mp3",
+            "expiré": "sounds/expire.mp3",
+            "expirer": "sounds/expire.mp3",
+            "inscription": "sounds/inscription.mp3",
+            "inscrire": "sounds/inscription.mp3",
+            "réserver": "sounds/inscription.mp3",
+            "heure de code": "sounds/hoc.mp3",
+            "mathieu": "sounds/matthieu.mp3",
+            "merci beaucoup": "sounds/merci.mp3",
+            "modalités": "sounds/modalites.mp3",
+            "modalité": "sounds/modalites.mp3",
+            "olivier": "sounds/olivier.mp3",
+            "playstation": "sounds/playstation.mp3",
+            "ps5": "sounds/playstation.mp3",
+            "nintendo": "sounds/nintendo.mp3",
+            "switch": "sounds/nintendo.mp3",
+            "xbox": "sounds/xbox.mp3",
+            "mario": "sounds/mario.mp3",
+            "sonic": "sounds/sonic.mp3",
+            "impossible": "sounds/vous_ne_passerez_pas.mp3",
+            "coucou": "sounds/coucou.mp3",
+            "miaou": "sounds/miaou.mp3",
+            "chat": "sounds/miaou.mp3",
+            "bonne année": "sounds/new-year.mp3",
+            "fifa": "sounds/fifa.mp3",
+            "fc 24": "sounds/fifa.mp3",
+            "fc 25": "sounds/fifa.mp3",
+            "fc 26": "sounds/fifa.mp3",
+            "windows": "sounds/windows.mp3",
+            "microsoft": "sounds/microsoft.mp3",
+            "grève": "sounds/greve.mp3",
+            "problème": "sounds/probleme.mp3",
+            "facebook": "sounds/facebook.mp3",
+            "fin de session": "sounds/minutes.mp3",
+            "final countdown": "sounds/minutes.mp3",
+            "zombie": "sounds/zombie.mp3",
+            "pleurer": "sounds/pleurer.mp3",
+            "pleurnicher": "sounds/pleurer.mp3",
+            "wesh": "sounds/wesh.mp3",
+            "frère": "sounds/frere.mp3",
+            "neige": "sounds/neige.mp3",
+            "dark souls": "sounds/darksouls.mp3",
+            "from software": "sounds/darksouls.mp3",
+            "hitler": "sounds/hitler.mp3",
+            "nazi": "sounds/hitler.mp3",
+            "allemagne": "sounds/hitler.mp3",
+            "erreur": "sounds/erreur.mp3",
+            "cheval": "sounds/cheval.mp3",
+            "cavalier": "sounds/cheval.mp3",
+            "russie": "sounds/russia.mp3",
+            "putin": "sounds/russia.mp3",
+            "russe": "sounds/russia.mp3",
+            "saxophone": "sounds/saxophone.mp3",
+            "mortal kombat": "sounds/mortal_kombat.mp3",
+            "j'en ai marre": "sounds/marre.mp3",
+            "pénible": "sounds/penible.mp3",
+            "philippe": "sounds/philippe.mp3",
+            "romantique": "sounds/romantique.mp3",
+            "castlevania": "sounds/castlevania.mp3",
+            "vampire": "sounds/castlevania.mp3",
+            "mes profs": "sounds/anne.mp3",
+            "staying alive": "sounds/staying.mp3",
+            "twitter": "sounds/twitter.mp3",
+            "rire": "sounds/nelso.mp3",
+            "pokémon": "sounds/pikachu.mp3",
+            "pikachu": "sounds/pikachu.mp3",
+            "anne": "sounds/no.mp3",
+            "français": "sounds/french.mp3",
+            "hello": "sounds/hello.mp3",
+            "dernière minute": "sounds/countdown.mp3",
+            "dernières minutes": "sounds/countdown.mp3",
+            "c'est nul": "sounds/nul.mp3",
+            "je ne sais pas": "sounds/xfiles.mp3",
+            "je suis choqué": "sounds/shock.mp3",
+            "predator": "sounds/predator.mp3",
+            "vainqueur": "sounds/yeah.mp3",
+            "pipi": "sounds/pee.mp3",
+            "pisser": "sounds/pee.mp3",
+            "chewbacca": "sounds/chewbacca.mp3",
+            "poilu": "sounds/chewbacca.mp3",
+            "réunion": "sounds/nono.mp3",
+            "léon": "sounds/leon.mp3",
+            "jérémy": "sounds/jeremy.mp3"
+        }
+        # "sur la tête de ma mère": "sounds/insulte.mp3",
+        # "merde": "sounds/surveillez.mp3",
+        # "couilles": "sounds/surveillez.mp3",
+        # "putain": "sounds/surveillez.mp3",
+        # "ta gueule": "sounds/insulte.mp3",
+        # "fais chier": "sounds/surveillez.mp3",
+        # "fait chier": "sounds/surveillez.mp3",
+        
+        # Créer le dossier des sons s'il n'existe pas
+        if not os.path.exists("sounds"):
+            os.makedirs("sounds")
+            
+        self.is_listening = False
+        
+    def calibrer_micro(self):
+        """Calibre le microphone pour le bruit ambiant"""
+        print("Calibration du microphone... Parlez maintenant.")
+        with self.microphone as source:
+            self.recognizer.adjust_for_ambient_noise(source, duration=2)
+        print("Calibration terminée!")
+    
+    def jouer_audio(self, fichier):
+        """Joue un fichier audio"""
+        try:
+            if os.path.exists(fichier):
+                pygame.mixer.music.load(fichier)
+                pygame.mixer.music.play()
+                print(f"Joue: {fichier}")
+                
+                # Attendre que la musique se termine
+                while pygame.mixer.music.get_busy():
+                    time.sleep(0.1)
+                    
+                print("Lecture terminée, reprise de l'écoute...")
+            else:
+                print(f"Fichier audio non trouvé: {fichier}")
+        except Exception as e:
+            print(f"Erreur lors de la lecture audio: {e}")
+    
+    def reconnaitre_commande(self, audio):
+        """Reconnaît la parole et retourne la commande"""
+        try:
+            # Reconnaissance en français
+            texte = self.recognizer.recognize_google(audio, language="fr-FR")
+            texte = texte.lower()
+            print(f"Vous avez dit: {texte}")
+            
+            # Vérifier chaque commande
+            for commande, fichier_audio in self.commands.items():
+                if commande in texte:
+                    return commande, fichier_audio
+            
+            # Vérifier la commande d'arrêt
+            # if "stop" in texte or "arrêt" in texte:
+                # return "stop", None
+            
+            return None, None
+            
+        except sr.UnknownValueError:
+            print("Désolé, je n'ai pas compris")
+            return None, None
+        except sr.RequestError as e:
+            print(f"Erreur avec le service de reconnaissance: {e}")
+            return None, None
+    
+    def traiter_commande(self, commande, fichier_audio):
+        """Traite la commande détectée"""
+        # if commande == "stop":
+            # self.is_listening = False
+            # print("Arrêt de l'écoute...")
+            # return
+            
+        if commande and fichier_audio:
+            print(f"Commande détectée: '{commande}'")
+            self.jouer_audio(fichier_audio)
+    
+    def ecouter_et_repondre(self):
+        """Écoute en continu et répond aux commandes"""
+        print("Écoute en cours...")
+        
+        with self.microphone as source:
+            while self.is_listening:
+                try:
+                    # Ne pas écouter pendant la lecture audio
+                    if pygame.mixer.music.get_busy():
+                        time.sleep(0.1)  # Pause courte pour éviter de surcharger le CPU
+                        continue
+                    
+                    # Écouter avec timeout
+                    print("En écoute...")
+                    audio = self.recognizer.listen(source, timeout=1, phrase_time_limit=5)
+                    
+                    # Traiter l'audio directement (pas dans un thread séparé)
+                    # pour éviter les chevauchements
+                    commande, fichier_audio = self.reconnaitre_commande(audio)
+                    self.traiter_commande(commande, fichier_audio)
+                    
+                except sr.WaitTimeoutError:
+                    # Timeout normal, continue à écouter
+                    continue
+                except Exception as e:
+                    print(f"Erreur d'écoute: {e}")
+    
+    def demarrer(self):
+        """Démarre le système de reconnaissance"""
+        print("=== Système de Reconnaissance Vocale ===")
+        print("Commandes disponibles:")
+        for commande in self.commands.keys():
+            print(f" - {commande}")
+        print("=" * 40)
+        
+        self.calibrer_micro()
+        self.is_listening = True
+        self.ecouter_et_repondre()
+
+def creer_fichiers_exemple():
+    """Crée des fichiers audio d'exemple (à remplacer par vos propres fichiers)"""
+    sounds_dir = "sounds"
+    
+    # Message pour indiquer qu'il faut ajouter des vrais fichiers audio
+    fichiers_necessaires = [
+        "au_revoir.mp3", "bonjour.mp3", "expire.mp3", 
+        "inscription.mp3", "matthieu.mp3", "merci.mp3",
+        "modalites.mp3", "olivier.mp3", "playstation.mp3",
+        "nintendo.mp3", "xbox.mp3", "mario.mp3", "sonic.mp3",
+        "vous_ne_passerez_pas.mp3", "coucou.mp3"
+    ]
+    
+    for fichier in fichiers_necessaires:
+        chemin = os.path.join(sounds_dir, fichier)
+        if not os.path.exists(chemin):
+            print(f"Veuillez ajouter le fichier audio: {chemin}")
+    
+    if not any(os.path.exists(os.path.join(sounds_dir, f)) for f in fichiers_necessaires):
+        print("\nPour utiliser l'application:")
+        print("1. Ajoutez vos fichiers MP3 dans le dossier 'sounds/'")
+        print("2. Modifiez le dictionnaire 'commands' si nécessaire")
+        print("3. Lancez le programme")
+    else:
+        print("Certains fichiers audio sont présents. Lancement possible.")
+
+if __name__ == "__main__":
+    # Vérifier les fichiers audio
+    creer_fichiers_exemple()
+    
+    # Démarrer l'application
+    app = AudioCommandRecognizer()
+    app.demarrer()
