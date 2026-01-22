@@ -90,7 +90,7 @@ class AudioCommandRecognizer:
             "hello": "sounds/hello.mp3",
             "dernière minute": "sounds/countdown.mp3",
             "dernières minutes": "sounds/countdown.mp3",
-            "c'est nul": "sounds/nul.mp3",
+            "c'est nul": "sounds/cnul.mp3",
             "je ne sais pas": "sounds/xfiles.mp3",
             "je suis choqué": "sounds/shock.mp3",
             "predator": "sounds/predator.mp3",
@@ -134,6 +134,12 @@ class AudioCommandRecognizer:
                 "path": r"apps/npm.lnk",
                 "action": "open_file"
             },
+            "modification programme": {
+                "type": "fichier",
+                "path": r"apps/mod.bat",
+                "action": "open_file"
+            },
+            
             # Applications système
             "calculatrice": {
                 "type": "app",

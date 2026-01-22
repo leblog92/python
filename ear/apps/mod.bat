@@ -1,0 +1,1 @@
+"C:\Program Files\Notepad++\notepad++.exe" "C:\Users\FOR5\Documents\GitHub\python\ear\ear.py" -n111
