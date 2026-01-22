@@ -124,7 +124,7 @@ class AudioCommandRecognizer:
                 "path": r"apps/stream.lnk",
                 "action": "open_file"
             },
-            "capture musique": {
+            "capture audio": {
                 "type": "fichier",
                 "path": r"apps/audio.lnk",
                 "action": "open_file"
@@ -136,10 +136,9 @@ class AudioCommandRecognizer:
             },
             "modification programme": {
                 "type": "fichier",
-                "path": r"apps/mod.bat",
+                "path": r"apps/mod.lnk",
                 "action": "open_file"
             },
-            
             # Applications système
             "calculatrice": {
                 "type": "app",
