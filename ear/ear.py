@@ -126,7 +126,7 @@ class AudioCommandRecognizer:
             },
             "capture audio": {
                 "type": "fichier",
-                "path": r"apps/audio.lnk",
+                "path": r"apps/audio.bat",
                 "action": "open_file"
             },
             "numérique pour tous": {
@@ -141,7 +141,7 @@ class AudioCommandRecognizer:
             },
             "modification programme": {
                 "type": "fichier",
-                "path": r"apps/mod.lnk",
+                "path": r"apps/mod.bat",
                 "action": "open_file"
             },
             # Applications système
