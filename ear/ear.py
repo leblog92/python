@@ -134,6 +134,11 @@ class AudioCommandRecognizer:
                 "path": r"apps/npm.lnk",
                 "action": "open_file"
             },
+            "catalogue médiathèque": {
+                "type": "fichier",
+                "path": r"apps/cat.lnk",
+                "action": "open_file"
+            },
             "modification programme": {
                 "type": "fichier",
                 "path": r"apps/mod.lnk",
@@ -195,10 +200,12 @@ class AudioCommandRecognizer:
         
     def calibrer_micro(self):
         """Calibre le microphone pour le bruit ambiant"""
+        print("=====================")
         print("Calibration du microphone... Parlez maintenant.")
         with self.microphone as source:
             self.recognizer.adjust_for_ambient_noise(source, duration=2)
         print("Calibration terminée!")
+        print("=====================")
     
     def jouer_audio(self, fichier):
         """Joue un fichier audio"""
@@ -218,13 +225,59 @@ class AudioCommandRecognizer:
         except Exception as e:
             print(f"Erreur lors de la lecture audio: {e}")
     
+    # def ouvrir_fichier(self, chemin_fichier):
+        # """Ouvre un fichier avec l'application par défaut"""
+        # try:
+            # system = platform.system().lower()
+            
+            # if system == "windows":
+                # os.startfile(chemin_fichier)
+            # elif system == "darwin":  # macOS
+                # subprocess.run(["open", chemin_fichier])
+            # else:  # Linux
+                # subprocess.run(["xdg-open", chemin_fichier])
+            
+            # print(f"Fichier ouvert: {chemin_fichier}")
+            # return True
+            
+        # except Exception as e:
+            # print(f"Erreur lors de l'ouverture du fichier: {e}")
+            # return False
+            
+            
     def ouvrir_fichier(self, chemin_fichier):
         """Ouvre un fichier avec l'application par défaut"""
         try:
             system = platform.system().lower()
             
+            # DEBUG: Vérifier ce qui se passe
+            print(f"[DEBUG] Tentative d'ouverture: {chemin_fichier}")
+            print(f"[DEBUG] Chemin existe: {os.path.exists(chemin_fichier)}")
+            print(f"[DEBUG] Dossier courant: {os.getcwd()}")
+            
             if system == "windows":
-                os.startfile(chemin_fichier)
+                # Pour Windows, traiter spécialement les .lnk
+                if chemin_fichier.lower().endswith('.lnk'):
+                    # Méthode 1: shell=True avec start
+                    print(f"[DEBUG] Fichier .lnk détecté, méthode spéciale Windows")
+                    
+                    # Vérifier si le chemin est correct
+                    if not os.path.exists(chemin_fichier):
+                        # Essayer avec un chemin relatif depuis le dossier courant
+                        chemin_relatif = os.path.join(os.getcwd(), chemin_fichier)
+                        if os.path.exists(chemin_relatif):
+                            chemin_fichier = chemin_relatif
+                            print(f"[DEBUG] Chemin corrigé: {chemin_fichier}")
+                    
+                    # Ouvrir le .lnk avec la commande start
+                    commande = f'start "" "{chemin_fichier}"'
+                    print(f"[DEBUG] Commande exécutée: {commande}")
+                    subprocess.run(commande, shell=True)
+                    
+                else:
+                    # Pour les autres fichiers, méthode normale
+                    os.startfile(chemin_fichier)
+                    
             elif system == "darwin":  # macOS
                 subprocess.run(["open", chemin_fichier])
             else:  # Linux
@@ -235,7 +288,8 @@ class AudioCommandRecognizer:
             
         except Exception as e:
             print(f"Erreur lors de l'ouverture du fichier: {e}")
-            return False
+            print(f"Traceback complet:", exc_info=True)
+            return False            
     
     def lancer_programme(self, commande):
         """Lance un programme"""

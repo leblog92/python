@@ -1,7 +1,9 @@
 @echo off
+echo Capture audio from video
+echo Compatible with YouTube, Vimeo, TikTok, Twitter, Instagram, Reddit, and hundreds of other platforms
 :start
 set /p url="Enter URL: "
-set "download_dir=C:\Users\FOR5\Music\"
+set "download_dir=%USERPROFILE%\Music\"
 
 REM Créer le dossier s'il n'existe pas
 if not exist "%download_dir%" mkdir "%download_dir%"
