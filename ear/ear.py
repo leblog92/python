@@ -51,6 +51,8 @@ class AudioCommandRecognizer:
             "microsoft": "sounds/microsoft.mp3",
             "grève": "sounds/greve.mp3",
             "malheureux": "sounds/probleme.mp3",
+            "malheureuse": "sounds/probleme.mp3",
+            "malheureur": "sounds/probleme.mp3",
             "facebook": "sounds/facebook.mp3",
             "fin de session": "sounds/minutes.mp3",
             "final countdown": "sounds/minutes.mp3",
@@ -144,6 +146,21 @@ class AudioCommandRecognizer:
                 "path": r"apps/mod.bat",
                 "action": "open_file"
             },
+            "contournement": {
+                "type": "fichier",
+                "path": r"apps/psiphon.exe",
+                "action": "open_file"
+            },
+            "retouche photo": {
+                "type": "fichier",
+                "path": r"apps/gimp.lnk",
+                "action": "open_file"
+            },
+            "internet": {
+                "type": "fichier",
+                "path": r"apps/brave.lnk",
+                "action": "open_file"
+            },
             # Applications système
             "calculatrice": {
                 "type": "app",
@@ -151,24 +168,6 @@ class AudioCommandRecognizer:
                     "windows": "calc.exe",
                     "linux": "gnome-calculator",
                     "mac": "Calculator"
-                },
-                "action": "launch_app"
-            },
-            "navigateur": {
-                "type": "app",
-                "command": {
-                    "windows": "start chrome",
-                    "linux": "google-chrome",
-                    "mac": "open -a 'Google Chrome'"
-                },
-                "action": "launch_app"
-            },
-            "internet": {
-                "type": "app",
-                "command": {
-                    "windows": "start chrome",
-                    "linux": "google-chrome", 
-                    "mac": "open -a 'Google Chrome'"
                 },
                 "action": "launch_app"
             },
@@ -224,7 +223,7 @@ class AudioCommandRecognizer:
                 print(f"Fichier audio non trouvé: {fichier}")
         except Exception as e:
             print(f"Erreur lors de la lecture audio: {e}")
-    
+    #ouvrirV1
     # def ouvrir_fichier(self, chemin_fichier):
         # """Ouvre un fichier avec l'application par défaut"""
         # try:
@@ -244,52 +243,88 @@ class AudioCommandRecognizer:
             # print(f"Erreur lors de l'ouverture du fichier: {e}")
             # return False
             
+    #ouvrirV2        
+    # def ouvrir_fichier(self, chemin_fichier):
+        # """Ouvre un fichier avec l'application par défaut"""
+        # try:
+            # system = platform.system().lower()
             
+            # # DEBUG: Vérifier ce qui se passe
+            # print(f"[DEBUG] Tentative d'ouverture: {chemin_fichier}")
+            # print(f"[DEBUG] Chemin existe: {os.path.exists(chemin_fichier)}")
+            # print(f"[DEBUG] Dossier courant: {os.getcwd()}")
+            
+            # if system == "windows":
+                # # Pour Windows, traiter spécialement les .lnk
+                # if chemin_fichier.lower().endswith('.lnk'):
+                    # # Méthode 1: shell=True avec start
+                    # print(f"[DEBUG] Fichier .lnk détecté, méthode spéciale Windows")
+                    
+                    # # Vérifier si le chemin est correct
+                    # if not os.path.exists(chemin_fichier):
+                        # # Essayer avec un chemin relatif depuis le dossier courant
+                        # chemin_relatif = os.path.join(os.getcwd(), chemin_fichier)
+                        # if os.path.exists(chemin_relatif):
+                            # chemin_fichier = chemin_relatif
+                            # print(f"[DEBUG] Chemin corrigé: {chemin_fichier}")
+                    
+                    # # Ouvrir le .lnk avec la commande start
+                    # commande = f'start "" "{chemin_fichier}"'
+                    # print(f"[DEBUG] Commande exécutée: {commande}")
+                    # subprocess.run(commande, shell=True)
+                    
+                # else:
+                    # # Pour les autres fichiers, méthode normale
+                    # os.startfile(chemin_fichier)
+                    
+            # elif system == "darwin":  # macOS
+                # subprocess.run(["open", chemin_fichier])
+            # else:  # Linux
+                # subprocess.run(["xdg-open", chemin_fichier])
+            
+            # print(f"Fichier ouvert: {chemin_fichier}")
+            # return True
+            
+        # except Exception as e:
+            # print(f"Erreur lors de l'ouverture du fichier: {e}")
+            # print(f"Traceback complet:", exc_info=True)
+            # return False            
+    
+    
     def ouvrir_fichier(self, chemin_fichier):
         """Ouvre un fichier avec l'application par défaut"""
         try:
             system = platform.system().lower()
             
-            # DEBUG: Vérifier ce qui se passe
-            print(f"[DEBUG] Tentative d'ouverture: {chemin_fichier}")
-            print(f"[DEBUG] Chemin existe: {os.path.exists(chemin_fichier)}")
-            print(f"[DEBUG] Dossier courant: {os.getcwd()}")
+            # Convertir en chemin absolu
+            if not os.path.isabs(chemin_fichier):
+                chemin_absolu = os.path.abspath(chemin_fichier)
+            else:
+                chemin_absolu = chemin_fichier
+            
+            print(f"Ouverture du fichier: {chemin_absolu}")
+            
+            if not os.path.exists(chemin_absolu):
+                print(f"ERREUR: Fichier introuvable: {chemin_absolu}")
+                return False
             
             if system == "windows":
-                # Pour Windows, traiter spécialement les .lnk
-                if chemin_fichier.lower().endswith('.lnk'):
-                    # Méthode 1: shell=True avec start
-                    print(f"[DEBUG] Fichier .lnk détecté, méthode spéciale Windows")
-                    
-                    # Vérifier si le chemin est correct
-                    if not os.path.exists(chemin_fichier):
-                        # Essayer avec un chemin relatif depuis le dossier courant
-                        chemin_relatif = os.path.join(os.getcwd(), chemin_fichier)
-                        if os.path.exists(chemin_relatif):
-                            chemin_fichier = chemin_relatif
-                            print(f"[DEBUG] Chemin corrigé: {chemin_fichier}")
-                    
-                    # Ouvrir le .lnk avec la commande start
-                    commande = f'start "" "{chemin_fichier}"'
-                    print(f"[DEBUG] Commande exécutée: {commande}")
-                    subprocess.run(commande, shell=True)
-                    
-                else:
-                    # Pour les autres fichiers, méthode normale
-                    os.startfile(chemin_fichier)
-                    
+                # Sous Windows, utiliser start pour les fichiers batch
+                # Cela les ouvre dans une nouvelle fenêtre cmd
+                subprocess.Popen(f'start "" "{chemin_absolu}"', shell=True)
+                
             elif system == "darwin":  # macOS
-                subprocess.run(["open", chemin_fichier])
+                subprocess.Popen(["open", chemin_absolu])
             else:  # Linux
-                subprocess.run(["xdg-open", chemin_fichier])
+                subprocess.Popen(["xdg-open", chemin_absolu])
             
-            print(f"Fichier ouvert: {chemin_fichier}")
+            print(f"✓ Fichier ouvert avec succès")
             return True
             
         except Exception as e:
-            print(f"Erreur lors de l'ouverture du fichier: {e}")
-            print(f"Traceback complet:", exc_info=True)
-            return False            
+            print(f"✗ Erreur lors de l'ouverture: {e}")
+            return False
+    
     
     def lancer_programme(self, commande):
         """Lance un programme"""
