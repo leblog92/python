@@ -121,7 +121,7 @@ class AudioCommandRecognizer:
             },
             "lance streaming": {
                 "type": "fichier",
-                "path": r"apps/stream.lnk",
+                "path": r"apps/cam.bat",
                 "action": "open_file"
             },
             "capture audio": {
