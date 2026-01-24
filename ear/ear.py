@@ -161,6 +161,11 @@ class AudioCommandRecognizer:
                 "path": r"apps/brave.lnk",
                 "action": "open_file"
             },
+            "spotify": {
+                "type": "fichier",
+                "path": r"apps/spo.lnk",
+                "action": "open_file"
+            },
             # Applications système
             "calculatrice": {
                 "type": "app",
