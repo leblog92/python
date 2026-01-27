@@ -66,7 +66,7 @@ class AudioCommandRecognizer:
             "mario": "sounds/mario.mp3",
             "mathieu": "sounds/matthieu.mp3",
             "merci beaucoup": "sounds/merci.mp3",
-            "mes profs": "sounds/anne.mp3",
+            "mes profs": "sounds/demon.mp3",
             "microsoft": "sounds/microsoft.mp3",
             "miaou": "sounds/miaou.mp3",
             "modalité": "sounds/modalites.mp3",
