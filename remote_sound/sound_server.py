@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 class SoundServer:
-    def __init__(self, host='0.0.0.0', port=5001):
+    def __init__(self, host='0.0.0.0', port=4000):
         self.host = host
         self.port = port
         self.running = True
