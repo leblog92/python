@@ -1,0 +1,1 @@
+remote_sound.bat 10.151.0.77 play "wait1.mp3"

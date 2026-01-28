@@ -1,0 +1,1 @@
+remote_sound.bat 10.151.0.77 play "test2.mp3"
