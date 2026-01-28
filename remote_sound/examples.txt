@@ -1,0 +1,12 @@
+# Ping the server
+python sound_client.py 192.168.1.100 ping
+
+# Play a sound file (path must exist on target PC)
+python sound_client.py 192.168.1.100 play "C:\\Windows\\Media\\tada.wav"
+
+# Speak text
+python sound_client.py 192.168.1.100 tts "Hello from another computer!"
+
+remote_sound.bat 192.168.1.100 ping
+remote_sound.bat 192.168.1.100 play "C:\Windows\Media\tada.wav"
+remote_sound.bat 192.168.1.100 tts "Hello World"

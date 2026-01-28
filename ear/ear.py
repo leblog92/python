@@ -56,7 +56,7 @@ class AudioCommandRecognizer:
             "inscrire": "sounds/inscription.mp3",
             "inscription": "sounds/inscription.mp3",
             "j'en ai marre": "sounds/marre.mp3",
-            "je ne sais pas": "sounds/xfiles.mp3",
+            "venu d'ailleurs": "sounds/xfiles.mp3",
             "je suis choqué": "sounds/shock.mp3",
             "jérémy": "sounds/anne.mp3",
             "léon": "sounds/leon.mp3",
