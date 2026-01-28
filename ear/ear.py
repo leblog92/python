@@ -21,6 +21,7 @@ class AudioCommandRecognizer:
         self.commands = {
             "allemagne": "sounds/hitler.mp3",
             "anne": "sounds/no.mp3",
+            "attention aux manettes": "sounds/pete.mp3",
             "assistante": "sounds/assistante.mp3",
             "au revoir": "sounds/au_revoir.mp3",
             "bonne année": "sounds/new-year.mp3",
@@ -59,6 +60,7 @@ class AudioCommandRecognizer:
             "je ne sais pas": "sounds/xfiles.mp3",
             "je suis choqué": "sounds/shock.mp3",
             "jérémy": "sounds/anne.mp3",
+            "johnny": "sounds/coucou2.mp3",
             "léon": "sounds/leon.mp3",
             "malheureur": "sounds/probleme.mp3",
             "malheureuse": "sounds/probleme.mp3",
@@ -132,6 +134,11 @@ class AudioCommandRecognizer:
                 "path": r"apps/audio.bat",
                 "action": "open_file"
             },
+            "capture vidéo": {
+                "type": "fichier",
+                "path": r"apps/video.bat",
+                "action": "open_file"
+            },
             "numérique pour tous": {
                 "type": "fichier",
                 "path": r"apps/npm.lnk",
@@ -155,6 +162,11 @@ class AudioCommandRecognizer:
             "retouche photo": {
                 "type": "fichier",
                 "path": r"apps/gimp.lnk",
+                "action": "open_file"
+            },
+            "retouche photo": {
+                "type": "fichier",
+                "path": r"apps/auda.lnk",
                 "action": "open_file"
             },
             "internet": {
