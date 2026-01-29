@@ -164,9 +164,14 @@ class AudioCommandRecognizer:
                 "path": r"apps/gimp.lnk",
                 "action": "open_file"
             },
-            "retouche photo": {
+            "retouche son": {
                 "type": "fichier",
                 "path": r"apps/auda.lnk",
+                "action": "open_file"
+            },
+            "ouvre caméra": {
+                "type": "fichier",
+                "path": r"L:\Groups\mediatheque\06- SECTEUR INFORMATIQUE\7- SALLE JVO\cam.html",
                 "action": "open_file"
             },
             "internet": {
