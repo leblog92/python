@@ -165,7 +165,7 @@ class AudioCommandRecognizer:
                 "path": r"apps/gimp.lnk",
                 "action": "open_file"
             },
-            "retouche photo": {
+            "retouche audio": {
                 "type": "fichier",
                 "path": r"apps/auda.lnk",
                 "action": "open_file"
