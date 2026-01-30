@@ -92,20 +92,8 @@ motion_threshold = 500
 capture_count = 0
 MAX_CAPTURES = 100
 
-# Définir le chemin du dossier de captures dans %USERPROFILE%\Pictures\motion_captures
-user_profile = os.environ.get('USERPROFILE')
-if user_profile:
-    capture_dir = os.path.join(user_profile, 'Pictures', 'motion_captures')
-else:
-    # Fallback si USERPROFILE n'est pas défini
-    capture_dir = 'motion_captures'
-    
-print(f"Capture directory: {capture_dir}")
-
-# Créer le dossier s'il n'existe pas
-if not os.path.exists(capture_dir):
-    os.makedirs(capture_dir)
-    print(f"Dossier créé: {capture_dir}")
+if not os.path.exists('motion_captures'):
+    os.makedirs('motion_captures')
 
 def save_capture(frame):
     """Sauvegarde une capture d'écran"""
@@ -113,13 +101,13 @@ def save_capture(frame):
     
     if capture_count >= MAX_CAPTURES:
         # Nettoyer les anciennes captures
-        files = sorted(os.listdir(capture_dir))
+        files = sorted(os.listdir('motion_captures'))
         for old_file in files[:-50]:
-            os.remove(os.path.join(capture_dir, old_file))
+            os.remove(os.path.join('motion_captures', old_file))
         capture_count = 50
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    filename = os.path.join(capture_dir, f"motion_{timestamp}.jpg")
+    filename = f"motion_captures/motion_{timestamp}.jpg"
     
     # Sauvegarde en JPG avec qualité optimisée
     cv2.imwrite(filename, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -242,7 +230,7 @@ def index():
     </style>
 </head>
 <body>
-    <img id="videoStream" src="/video_feed" alt="Flux vidéo en direct">
+    <img id="videoStream" src="http://10.151.0.66/video_feed" alt="Flux vidéo en direct">
     
     <script>
         // Rechargement automatique en cas d'erreur
@@ -267,7 +255,7 @@ if __name__ == '__main__':
     print("Accédez à http://localhost:5000")
     print("Résolution: 1280x720 HD")
     print("Backend: DSHOW (Windows)")
-    print("Dossier des captures:", capture_dir)
+    print("Dossier des captures:", os.path.abspath('motion_captures'))
     print("Détection de mouvement: Active")
     print("Captures automatiques: Activées")
     app.run(host='0.0.0.0', port=5000, debug=False)

@@ -4,7 +4,10 @@ import numpy as np
 import datetime
 import os
 import time
+import socket
+import getpass
 from flask import Response
+import subprocess
 
 app = flask.Flask(__name__)
 
@@ -82,6 +85,134 @@ class RobustCamera:
             print(f"ERREUR lecture: {e}")
             return False, None
 
+def get_local_ip():
+    """Obtenir l'adresse IP locale du serveur"""
+    try:
+        # Créer une connexion pour déterminer l'IP utilisée pour les connexions externes
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # Ne se connecte pas réellement, prépare juste le socket
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception as e:
+        print(f"Erreur lors de la récupération de l'IP: {e}")
+        return "127.0.0.1"
+
+def generate_html_file(ip_address):
+    """Génère le fichier HTML avec l'adresse IP correcte"""
+    html_content = f'''<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="https://upload.wikimedia.org/wikipedia/commons/b/b4/Blue_eye_icon.png"/>
+    <title>Flux Salle JVO</title>
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        body {{
+            background-color: #000;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }}
+        .container {{
+            text-align: center;
+            max-width: 100%;
+        }}
+        .video-container {{
+            position: relative;
+            display: inline-block;
+            margin-bottom: 20px;
+        }}
+        
+        img {{
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(255, 255, 255, 0.1);
+        }}
+
+        
+        .ip-dot {{
+            margin: 0 5px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="video-container">
+            <img id="videoFeed" src="http://{ip_address}:5000/video_feed" width="960" height="540" alt="Flux vidéo">
+        </div>
+    </div>
+</body>
+</html>'''
+    
+    return html_content
+
+def save_html_file():
+    """Sauvegarde le fichier HTML à l'emplacement spécifié"""
+    try:
+        # Chemin de destination
+        destination_path = r"L:\Groups\mediatheque\06- SECTEUR INFORMATIQUE\7- SALLE JVO"
+        
+        # Vérifier si le chemin existe
+        if not os.path.exists(destination_path):
+            print(f"Le chemin n'existe pas: {destination_path}")
+            print("Création du chemin...")
+            try:
+                os.makedirs(destination_path, exist_ok=True)
+                print(f"Chemin créé: {destination_path}")
+            except Exception as e:
+                print(f"Impossible de créer le chemin: {e}")
+                # Essayer de sauvegarder dans le répertoire courant
+                destination_path = "."
+        
+        # Obtenir l'adresse IP
+        ip_address = get_local_ip()
+        print(f"Adresse IP détectée: {ip_address}")
+        
+        # Générer le contenu HTML
+        html_content = generate_html_file(ip_address)
+        
+        # Chemin complet du fichier
+        html_file_path = os.path.join(destination_path, "cam.html")
+        
+        # Sauvegarder le fichier
+        with open(html_file_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        print(f"Fichier HTML généré avec succès: {html_file_path}")
+        print(f"URL du flux: http://{ip_address}:5000/video_feed")
+        
+        # Essayer d'ouvrir le fichier HTML
+        try:
+            subprocess.Popen(f'explorer "{html_file_path}"', shell=True)
+            print("Fichier HTML ouvert dans le navigateur par défaut")
+        except:
+            print(f"Fichier disponible à: {html_file_path}")
+            
+    except Exception as e:
+        print(f"Erreur lors de la génération du fichier HTML: {e}")
+        # Essayer de sauvegarder dans le répertoire courant en cas d'erreur
+        try:
+            ip_address = get_local_ip()
+            html_content = generate_html_file(ip_address)
+            with open("flux_jvo_local.html", 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            print("Fichier HTML sauvegardé localement: flux_jvo_local.html")
+        except Exception as e2:
+            print(f"Échec de la sauvegarde locale: {e2}")
+
 # Initialisation
 camera = RobustCamera()
 
@@ -92,41 +223,43 @@ motion_threshold = 500
 capture_count = 0
 MAX_CAPTURES = 100
 
-# Définir le chemin du dossier de captures dans %USERPROFILE%\Pictures\motion_captures
-user_profile = os.environ.get('USERPROFILE')
-if user_profile:
-    capture_dir = os.path.join(user_profile, 'Pictures', 'motion_captures')
-else:
-    # Fallback si USERPROFILE n'est pas défini
-    capture_dir = 'motion_captures'
-    
-print(f"Capture directory: {capture_dir}")
+# Définir le dossier des captures dans %USERPROFILE%\Pictures\motion_captures
+user_profile = os.environ.get('USERPROFILE', os.path.expanduser('~'))
+motion_captures_dir = os.path.join(user_profile, 'Pictures', 'motion_captures')
 
 # Créer le dossier s'il n'existe pas
-if not os.path.exists(capture_dir):
-    os.makedirs(capture_dir)
-    print(f"Dossier créé: {capture_dir}")
+if not os.path.exists(motion_captures_dir):
+    os.makedirs(motion_captures_dir, exist_ok=True)
+    print(f"Dossier créé: {motion_captures_dir}")
 
 def save_capture(frame):
-    """Sauvegarde une capture d'écran"""
+    """Sauvegarde une capture d'écran dans %USERPROFILE%\Pictures\motion_captures"""
     global capture_count
     
     if capture_count >= MAX_CAPTURES:
         # Nettoyer les anciennes captures
-        files = sorted(os.listdir(capture_dir))
-        for old_file in files[:-50]:
-            os.remove(os.path.join(capture_dir, old_file))
-        capture_count = 50
+        try:
+            files = sorted(os.listdir(motion_captures_dir))
+            if len(files) > MAX_CAPTURES:
+                for old_file in files[:len(files) - MAX_CAPTURES]:
+                    os.remove(os.path.join(motion_captures_dir, old_file))
+                capture_count = MAX_CAPTURES
+        except Exception as e:
+            print(f"Erreur lors du nettoyage des anciennes captures: {e}")
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    filename = os.path.join(capture_dir, f"motion_{timestamp}.jpg")
+    filename = f"motion_{timestamp}.jpg"
+    file_path = os.path.join(motion_captures_dir, filename)
     
-    # Sauvegarde en JPG avec qualité optimisée
-    cv2.imwrite(filename, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
-    capture_count += 1
-    print(f"Capture sauvegardée: {filename}")
-    
-    return filename
+    try:
+        # Sauvegarde en JPG avec qualité optimisée
+        cv2.imwrite(file_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        capture_count += 1
+        print(f"Capture sauvegardée: {file_path}")
+        return file_path
+    except Exception as e:
+        print(f"Erreur lors de la sauvegarde de la capture: {e}")
+        return None
 
 def detect_motion(current_frame):
     """Détecte les mouvements dans l'image"""
@@ -246,16 +379,16 @@ def index():
     
     <script>
         // Rechargement automatique en cas d'erreur
-        document.getElementById('videoStream').onerror = function() {
+        document.getElementById('videoStream').onerror = function() {{
             this.src = '/video_feed?t=' + new Date().getTime();
-        };
+        }};
         
         // Rechargement périodique pour maintenir la connexion
-        setInterval(function() {
+        setInterval(function() {{
             var img = document.getElementById('videoStream');
             var currentSrc = img.src;
             img.src = currentSrc.split('?')[0] + '?t=' + new Date().getTime();
-        }, 30000); // Toutes les 30 secondes
+        }}, 30000); // Toutes les 30 secondes
     </script>
 </body>
 </html>
@@ -264,10 +397,20 @@ def index():
 if __name__ == '__main__':
     print("=== LOGITECH C270 - SURVEILLANCE HD AVEC GESTION D'ERREURS ===")
     print("Démarrage du serveur...")
-    print("Accédez à http://localhost:5000")
+    
+    # Générer et sauvegarder le fichier HTML
+    save_html_file()
+    
+    # Obtenir l'adresse IP pour l'affichage
+    ip_address = get_local_ip()
+    
+    print(f"Accédez à http://{ip_address}:5000")
     print("Résolution: 1280x720 HD")
     print("Backend: DSHOW (Windows)")
-    print("Dossier des captures:", capture_dir)
+    print(f"Dossier des captures: {motion_captures_dir}")
     print("Détection de mouvement: Active")
     print("Captures automatiques: Activées")
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    print("\nFichier HTML disponible à:")
+    print(r"L:\Groups\mediatheque\06- SECTEUR INFORMATIQUE\7- SALLE JVO\cam.html")
+    
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
