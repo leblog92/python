@@ -6,14 +6,8 @@ import os
 import time
 import socket
 import getpass
-from flask import Response, request, jsonify
+from flask import Response
 import subprocess
-import threading
-import queue
-import tempfile
-from gtts import gTTS
-import pygame
-import uuid
 
 app = flask.Flask(__name__)
 
@@ -105,81 +99,15 @@ def get_local_ip():
         print(f"Erreur lors de la récupération de l'IP: {e}")
         return "127.0.0.1"
 
-# File d'attente pour les messages TTS
-tts_queue = queue.Queue()
-pygame.mixer.init()
-
-# Dossier pour les fichiers audio temporaires
-audio_temp_dir = os.path.join(tempfile.gettempdir(), 'jvo_audio')
-os.makedirs(audio_temp_dir, exist_ok=True)
-
-def tts_worker():
-    """Worker thread pour gérer la lecture audio"""
-    while True:
-        try:
-            task = tts_queue.get()
-            if task is None:  # Signal d'arrêt
-                break
-                
-            task_type, data = task
-            
-            if task_type == 'tts':
-                text, lang = data
-                try:
-                    # Générer le TTS
-                    tts = gTTS(text=text, lang=lang, slow=False)
-                    audio_file = os.path.join(audio_temp_dir, f'tts_{uuid.uuid4()}.mp3')
-                    tts.save(audio_file)
-                    
-                    # Lire le fichier audio
-                    pygame.mixer.music.load(audio_file)
-                    pygame.mixer.music.play()
-                    
-                    # Attendre la fin de la lecture
-                    while pygame.mixer.music.get_busy():
-                        time.sleep(0.1)
-                    
-                    # Supprimer le fichier temporaire
-                    try:
-                        os.remove(audio_file)
-                    except:
-                        pass
-                        
-                except Exception as e:
-                    print(f"Erreur TTS: {e}")
-                    
-            elif task_type == 'audio':
-                audio_path = data
-                if os.path.exists(audio_path):
-                    try:
-                        pygame.mixer.music.load(audio_path)
-                        pygame.mixer.music.play()
-                        
-                        while pygame.mixer.music.get_busy():
-                            time.sleep(0.1)
-                    except Exception as e:
-                        print(f"Erreur lecture audio: {e}")
-                else:
-                    print(f"Fichier audio non trouvé: {audio_path}")
-                    
-        except Exception as e:
-            print(f"Erreur dans le worker audio: {e}")
-        finally:
-            tts_queue.task_done()
-
-# Démarrer le worker TTS
-tts_thread = threading.Thread(target=tts_worker, daemon=True)
-tts_thread.start()
-
 def generate_html_file(ip_address):
-    """Génère le fichier HTML avec l'adresse IP correcte et les contrôles audio"""
+    """Génère le fichier HTML avec l'adresse IP correcte"""
     html_content = f'''<!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/png" href="https://upload.wikimedia.org/wikipedia/commons/b/b4/Blue_eye_icon.png"/>
-    <title>Flux Salle JVO - Contrôle Audio</title>
+    <title>Flux Salle JVO</title>
     <style>
         * {{
             margin: 0;
@@ -200,12 +128,11 @@ def generate_html_file(ip_address):
         .container {{
             text-align: center;
             max-width: 100%;
-            width: 1000px;
         }}
         .video-container {{
             position: relative;
             display: inline-block;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
         }}
         
         img {{
@@ -215,226 +142,18 @@ def generate_html_file(ip_address):
             box-shadow: 0 4px 15px rgba(255, 255, 255, 0.1);
         }}
 
-        .audio-controls {{
-            background-color: #1a1a1a;
-            padding: 20px;
-            border-radius: 10px;
-            margin-top: 20px;
-            width: 100%;
-        }}
         
-        .control-group {{
-            margin-bottom: 15px;
-        }}
-        
-        label {{
-            display: block;
-            margin-bottom: 5px;
-            color: #4CAF50;
-            font-weight: bold;
-        }}
-        
-        input[type="text"], select {{
-            width: 100%;
-            padding: 10px;
-            border: 2px solid #333;
-            border-radius: 5px;
-            background-color: #222;
-            color: white;
-            font-size: 16px;
-        }}
-        
-        button {{
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
-            font-size: 16px;
-            margin: 10px 5px;
-            cursor: pointer;
-            border-radius: 5px;
-            transition: background-color 0.3s;
-            font-weight: bold;
-        }}
-        
-        button:hover {{
-            background-color: #45a049;
-        }}
-        
-        button:active {{
-            background-color: #3d8b40;
-        }}
-        
-        .danger {{
-            background-color: #f44336;
-        }}
-        
-        .danger:hover {{
-            background-color: #da190b;
-        }}
-        
-        .warning {{
-            background-color: #ff9800;
-        }}
-        
-        .warning:hover {{
-            background-color: #e68900;
-        }}
-        
-        .status {{
-            margin-top: 15px;
-            padding: 10px;
-            border-radius: 5px;
-            display: none;
-        }}
-        
-        .success {{
-            background-color: #4CAF50;
-            color: white;
-        }}
-        
-        .error {{
-            background-color: #f44336;
-            color: white;
-        }}
-        
-        h2 {{
-            color: #4CAF50;
-            margin-bottom: 20px;
-            border-bottom: 2px solid #4CAF50;
-            padding-bottom: 10px;
-        }}
-        
-        .ip-display {{
-            background-color: #333;
-            padding: 10px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            font-family: monospace;
+        .ip-dot {{
+            margin: 0 5px;
         }}
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎥 Surveillance Salle JVO</h1>
-        <div class="ip-display">
-            📍 Adresse du serveur : http://{ip_address}:5000
-        </div>
-        
         <div class="video-container">
             <img id="videoFeed" src="http://{ip_address}:5000/video_feed" width="960" height="540" alt="Flux vidéo">
         </div>
-        
-        <div class="audio-controls">
-            <h2>Contrôles à Distance</h2>
-            
-            <div class="control-group">
-                <label for="ttsText">Message TTS (Text-to-Speech) :</label>
-                <input type="text" id="ttsText" placeholder="Message à prononcer" value="Bienvenue dans la salle jeux vidéo. Un membre du personnel va vous accueillir dans un instant.">
-            </div>
-            
-            <div class="control-group">
-                <label for="ttsLang">Langue :</label>
-                <select id="ttsLang">
-                    <option value="fr">Français</option>
-                    <option value="en">English</option>
-                    <option value="es">Español</option>
-                    <option value="de">Deutsch</option>
-                </select>
-            </div>
-            
-            <div>
-                <button id="playTTS">▶️ Lire le message</button>
-                <button id="playAlert" class="warning">🚨 Alerte de sécurité</button>
-                <button id="playDoorbell" class="warning">🔔 Sonnette</button>
-                <button id="stopAudio" class="danger">⏹️ Arrêter l'audio</button>
-            </div>
-            
-            <div id="status" class="status"></div>
-        </div>
     </div>
-    
-    <script>
-        function showStatus(message, isError = false) {{
-            const statusDiv = document.getElementById('status');
-            statusDiv.textContent = message;
-            statusDiv.className = 'status ' + (isError ? 'error' : 'success');
-            statusDiv.style.display = 'block';
-            
-            setTimeout(() => {{
-                statusDiv.style.display = 'none';
-            }}, 3000);
-        }}
-        
-        async function sendAudioCommand(endpoint, data = {{}}) {{
-            try {{
-                const response = await fetch(`http://{ip_address}:5000/${{endpoint}}`, {{
-                    method: 'POST',
-                    headers: {{
-                        'Content-Type': 'application/json',
-                    }},
-                    body: JSON.stringify(data)
-                }});
-                
-                const result = await response.json();
-                
-                if (response.ok) {{
-                    showStatus(result.message || 'Commande envoyée avec succès !');
-                }} else {{
-                    showStatus(result.error || 'Erreur lors de la commande', true);
-                }}
-            }} catch (error) {{
-                showStatus('Erreur de connexion au serveur', true);
-                console.error('Erreur:', error);
-            }}
-        }}
-        
-        // Événements des boutons
-        document.getElementById('playTTS').addEventListener('click', () => {{
-            const text = document.getElementById('ttsText').value;
-            const lang = document.getElementById('ttsLang').value;
-            
-            if (text.trim() === '') {{
-                showStatus('Veuillez entrer un message', true);
-                return;
-            }}
-            
-            sendAudioCommand('play_tts', {{ text: text, lang: lang }});
-        }});
-        
-        document.getElementById('playAlert').addEventListener('click', () => {{
-            sendAudioCommand('play_sound', {{ sound: 'alert' }});
-        }});
-        
-        document.getElementById('playDoorbell').addEventListener('click', () => {{
-            sendAudioCommand('play_sound', {{ sound: 'doorbell' }});
-        }});
-        
-        document.getElementById('stopAudio').addEventListener('click', () => {{
-            sendAudioCommand('stop_audio');
-        }});
-        
-        // Touche Entrée pour envoyer le TTS
-        document.getElementById('ttsText').addEventListener('keypress', (e) => {{
-            if (e.key === 'Enter') {{
-                document.getElementById('playTTS').click();
-            }}
-        }});
-        
-        // Rechargement automatique de la vidéo en cas d'erreur
-        document.getElementById('videoFeed').onerror = function() {{
-            this.src = `http://{ip_address}:5000/video_feed?t=${{new Date().getTime()}}`;
-        }};
-        
-        // Rechargement périodique pour maintenir la connexion
-        setInterval(() => {{
-            const img = document.getElementById('videoFeed');
-            img.src = img.src.split('?')[0] + '?t=' + new Date().getTime();
-        }}, 30000);
-    </script>
 </body>
 </html>'''
     
@@ -512,12 +231,6 @@ motion_captures_dir = os.path.join(user_profile, 'Pictures', 'motion_captures')
 if not os.path.exists(motion_captures_dir):
     os.makedirs(motion_captures_dir, exist_ok=True)
     print(f"Dossier créé: {motion_captures_dir}")
-
-# Chemins des sons prédéfinis (à créer manuellement ou à télécharger)
-sound_files = {
-    'alert': 'alert.wav',  # À créer dans le même dossier que le script
-    'doorbell': 'doorbell.wav'  # À créer dans le même dossier que le script
-}
 
 def save_capture(frame):
     """Sauvegarde une capture d'écran dans %USERPROFILE%\Pictures\motion_captures"""
@@ -630,7 +343,6 @@ def generate_frames():
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
-# Routes Flask
 @app.route('/video_feed')
 def video_feed():
     return Response(generate_frames(),
@@ -682,72 +394,6 @@ def index():
 </html>
 '''
 
-# Routes pour le contrôle audio
-@app.route('/play_tts', methods=['POST'])
-def play_tts():
-    """Joue un texte en TTS"""
-    try:
-        data = request.get_json()
-        text = data.get('text', '')
-        lang = data.get('lang', 'fr')
-        
-        if not text:
-            return jsonify({'error': 'Aucun texte fourni'}), 400
-        
-        print(f"TTS demandé: '{text}' en {lang}")
-        tts_queue.put(('tts', (text, lang)))
-        
-        return jsonify({'message': f'Message TTS envoyé: "{text}"'})
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/play_sound', methods=['POST'])
-def play_sound():
-    """Joue un son prédéfini"""
-    try:
-        data = request.get_json()
-        sound_type = data.get('sound', 'alert')
-        
-        # Chemin du son (peut être modifié selon vos besoins)
-        if sound_type == 'alert':
-            sound_path = os.path.join(os.path.dirname(__file__), 'alert.wav')
-        elif sound_type == 'doorbell':
-            sound_path = os.path.join(os.path.dirname(__file__), 'doorbell.wav')
-        else:
-            return jsonify({'error': 'Type de son non reconnu'}), 400
-        
-        print(f"Son demandé: {sound_type}")
-        
-        # Vérifier si le fichier existe
-        if os.path.exists(sound_path):
-            tts_queue.put(('audio', sound_path))
-            return jsonify({'message': f'Son {sound_type} envoyé'})
-        else:
-            # Fallback vers un TTS si le fichier n'existe pas
-            if sound_type == 'alert':
-                fallback_text = "Attention! Alerte de sécurité!"
-            elif sound_type == 'doorbell':
-                fallback_text = "Ding dong! Quelqu'un à la porte!"
-            else:
-                fallback_text = "Notification sonore"
-            
-            tts_queue.put(('tts', (fallback_text, 'fr')))
-            return jsonify({'message': f'Son {sound_type} (TTS fallback) envoyé'})
-            
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/stop_audio', methods=['POST'])
-def stop_audio():
-    """Arrête la lecture audio en cours"""
-    try:
-        pygame.mixer.music.stop()
-        print("Audio arrêté")
-        return jsonify({'message': 'Audio arrêté avec succès'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 if __name__ == '__main__':
     print("=== LOGITECH C270 - SURVEILLANCE HD AVEC GESTION D'ERREURS ===")
     print("Démarrage du serveur...")
@@ -764,15 +410,6 @@ if __name__ == '__main__':
     print(f"Dossier des captures: {motion_captures_dir}")
     print("Détection de mouvement: Active")
     print("Captures automatiques: Activées")
-    print("Contrôle à distance: Activé")
-    print("\nFonctionnalités audio disponibles:")
-    print("  - TTS (Text-to-Speech) avec choix de langue")
-    print("  - Alerte de sécurité")
-    print("  - Sonnette")
-    print("  - Arrêt audio")
-    print("\nNote: Pour les sons personnalisés, placez les fichiers .wav dans le même dossier que le script:")
-    print("  - alert.wav (pour l'alerte)")
-    print("  - doorbell.wav (pour la sonnette)")
     print("\nFichier HTML disponible à:")
     print(r"L:\Groups\mediatheque\06- SECTEUR INFORMATIQUE\7- SALLE JVO\cam.html")
     
