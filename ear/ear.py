@@ -71,6 +71,7 @@ class AudioCommandRecognizer:
             "mes profs": "sounds/demon.mp3",
             "microsoft": "sounds/microsoft.mp3",
             "miaou": "sounds/miaou.mp3",
+            "minecraft": "sounds/minecraft.mp3",
             "modalité": "sounds/modalites.mp3",
             "modalités": "sounds/modalites.mp3",
             "mortal kombat": "sounds/mortal_kombat.mp3",
