@@ -25,6 +25,7 @@ class AudioCommandRecognizer:
             "assistante": "sounds/assistante.mp3",
             "au revoir": "sounds/au_revoir.mp3",
             "bonne année": "sounds/new-year.mp3",
+            "tu as entendu": "sounds/bonjour.mp3",
             "castlevania": "sounds/castlevania.mp3",
             "cavalier": "sounds/cheval.mp3",
             "c'est nul": "sounds/cnul.mp3",
