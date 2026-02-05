@@ -54,8 +54,8 @@ class AudioCommandRecognizer:
             "grève": "sounds/greve.mp3",
             "hello": "sounds/hello.mp3",
             "heure de code": "sounds/hoc.mp3",
-            "hitler": "sounds/hitler.mp3",
-            "impossible": "sounds/vous_ne_passerez_pas.mp3",
+            "hitler": "sounds/nein.mp3",
+            "vous ne passerez pas": "sounds/vous_ne_passerez_pas.mp3",
             "inscrire": "sounds/inscription.mp3",
             "inscription": "sounds/inscription.mp3",
             "j'en ai marre": "sounds/marre.mp3",
@@ -113,7 +113,11 @@ class AudioCommandRecognizer:
             "windows": "sounds/windows.mp3",
             "xbox": "sounds/xbox.mp3",
             "zombie": "sounds/zombie.mp3",
-            "fin de partie": "sounds/fin.mp3"
+            "fin de partie": "sounds/fin.mp3",
+            "paradoxal": "sounds/pasfaux.mp3",
+            "incongru": "sounds/pasfaux.mp3",
+            "chiffrement": "sounds/pasfaux.mp3",
+            "j'ai une théorie": "sounds/chagrin.mp3"
         }
         
         # Dictionnaire des actions système
@@ -174,7 +178,17 @@ class AudioCommandRecognizer:
                 "path": r"apps/gimp.lnk",
                 "action": "open_file"
             },
+            "modification photo": {
+                "type": "fichier",
+                "path": r"apps/gimp.lnk",
+                "action": "open_file"
+            },
             "retouche audio": {
+                "type": "fichier",
+                "path": r"apps/auda.lnk",
+                "action": "open_file"
+            },
+            "modification audio": {
                 "type": "fichier",
                 "path": r"apps/auda.lnk",
                 "action": "open_file"
@@ -192,6 +206,11 @@ class AudioCommandRecognizer:
             "spotify": {
                 "type": "fichier",
                 "path": r"apps/spo.lnk",
+                "action": "open_file"
+            },
+            "recherche profonde": {
+                "type": "fichier",
+                "path": r"apps/ds.lnk",
                 "action": "open_file"
             },
             # Applications système
