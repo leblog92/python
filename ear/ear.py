@@ -125,6 +125,7 @@ class AudioCommandRecognizer:
             "problème": "sounds/problem.mp3",
             "ps5": "sounds/playstation.mp3",
             "putin": "sounds/russia.mp3",
+            "rembobiner": "sounds/rewind.mp3",
             "réserver": "sounds/resa.mp3",
             "réunion": "sounds/nono.mp3",
             "rire": "sounds/nelson.mp3",
