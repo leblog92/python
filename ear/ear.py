@@ -46,6 +46,7 @@ class AudioCommandRecognizer:
             "fifa": "sounds/fifa.mp3",
             "final countdown": "sounds/minutes.mp3",
             "fin de session": "sounds/minutes.mp3",
+            "fortnite": "sounds/robocop.mp3",
             "français": "sounds/french.mp3",
             "frère": "sounds/frere.mp3",
             "from software": "sounds/darksouls.mp3",
@@ -93,7 +94,7 @@ class AudioCommandRecognizer:
             "problème": "sounds/problem.mp3",
             "ps5": "sounds/playstation.mp3",
             "putin": "sounds/russia.mp3",
-            "réserver": "sounds/inscription.mp3",
+            "réserver": "sounds/résa.mp3",
             "réunion": "sounds/nono.mp3",
             "rire": "sounds/nelson.mp3",
             "romantique": "sounds/romantique.mp3",
@@ -110,7 +111,8 @@ class AudioCommandRecognizer:
             "wesh": "sounds/wesh.mp3",
             "windows": "sounds/windows.mp3",
             "xbox": "sounds/xbox.mp3",
-            "zombie": "sounds/zombie.mp3"
+            "zombie": "sounds/zombie.mp3",
+            "fin de partie": "sounds/fin.mp3"
         }
         
         # Dictionnaire des actions système
@@ -159,6 +161,11 @@ class AudioCommandRecognizer:
             "contournement": {
                 "type": "fichier",
                 "path": r"apps/psiphon.exe",
+                "action": "open_file"
+            },
+            "redémarrage": {
+                "type": "fichier",
+                "path": r"apps/restart.bat",
                 "action": "open_file"
             },
             "retouche photo": {
