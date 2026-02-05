@@ -1,3 +1,3 @@
 @echo off
 cd /d "%~dp0"
-python ear.py --gui
+"%USERPROFILE%\AppData\Local\Programs\Python\Python313\python.exe" ear.py --gui
