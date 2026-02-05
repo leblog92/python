@@ -101,6 +101,7 @@ class AudioCommandRecognizer:
             "nazi": "sounds/hitler.mp3",
             "neige": "sounds/neige.mp3",
             "nintendo": "sounds/nintendo.mp3",
+            "nurgle": "sounds/nurgle.mp3",
             "olivier": "sounds/olivier.mp3",
             "papa": "sounds/papa.mp3",
             "paradoxal": "sounds/pasfaux.mp3",
@@ -130,6 +131,7 @@ class AudioCommandRecognizer:
             "romantique": "sounds/romantique.mp3",
             "russe": "sounds/cnormal.mp3",
             "russie": "sounds/cnormal.mp3",
+            "samurai": "sounds/samurai.mp3",
             "saxophone": "sounds/saxophone.mp3",
             "solitude": "sounds/solitude.mp3",
             "sonic": "sounds/sonic.mp3",
@@ -147,6 +149,7 @@ class AudioCommandRecognizer:
             "une autre galaxie": "sounds/xfiles.mp3",
             "vomir": "sounds/vomir.mp3",
             "vous ne passerez pas": "sounds/vous_ne_passerez_pas.mp3",
+            "warhammer": "sounds/warhammer.mp3",
             "wehrmacht": "sounds/hitler.mp3",
             "wesh": "sounds/wesh.mp3",
             "windows": "sounds/windows.mp3",
@@ -266,7 +269,7 @@ class AudioCommandRecognizer:
             "bloc-notes": {
                 "type": "app",
                 "command": {
-                    "windows": "notepad.exe",
+                    "windows": "notepad++.exe",
                     "linux": "gedit",
                     "mac": "open -a 'TextEdit'"
                 },
@@ -297,7 +300,7 @@ class AudioCommandRecognizer:
         self.on_listening_stop = None
         
     def calibrer_micro(self):
-        """Calibre le microphone pour le bruit ambiant"""
+        """Calibration"""
         print("")
         print("=====================")
         print("Calibration du microphone... Parlez maintenant.")
