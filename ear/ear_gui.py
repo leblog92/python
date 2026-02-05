@@ -1,4 +1,5 @@
 import tkinter as tk
+import tkinter as tk
 from tkinter import ttk, scrolledtext
 import threading
 import queue
@@ -35,6 +36,15 @@ class VoiceAssistantGUI:
         
         # Mettre à jour les statistiques périodiquement
         self.update_stats()
+           
+        # Démarrer la vérification des messages
+        self.check_queue()
+        
+        # Mettre à jour les statistiques périodiquement
+        self.update_stats()
+        
+        # Démarrer l'écoute automatiquement (après un court délai)
+        self.root.after(1000, self.start_listening)  # <-- ADD THIS LINE
         
     def setup_styles(self):
         """Configure les styles pour une apparence moderne"""
@@ -62,7 +72,7 @@ class VoiceAssistantGUI:
         # Logo/Titre
         title_label = tk.Label(
             header_frame,
-            text="🎤 EAR - Assistant Vocal",
+            text="👂 EAR - Enhanced Audio Recognition",
             font=("Segoe UI", 24, "bold"),
             fg=self.accent_color,
             bg=self.bg_color
@@ -97,7 +107,7 @@ class VoiceAssistantGUI:
         # Bouton principal d'écoute
         self.listen_btn = ttk.Button(
             left_panel,
-            text="▶ Démarrer l'écoute",
+            text="▶ Start listening",
             command=self.toggle_listening,
             width=20
         )

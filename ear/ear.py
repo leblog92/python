@@ -69,6 +69,7 @@ class AudioCommandRecognizer:
             "malheureux": "sounds/probleme.mp3",
             "mario": "sounds/mario.mp3",
             "mathieu": "sounds/matthieu.mp3",
+            "maurice": "sounds/maurice.mp3",
             "merci beaucoup": "sounds/merci.mp3",
             "mes profs": "sounds/demon.mp3",
             "microsoft": "sounds/microsoft.mp3",
@@ -84,8 +85,7 @@ class AudioCommandRecognizer:
             "pénible": "sounds/penible.mp3",
             "philippe": "sounds/philippe.mp3",
             "pikachu": "sounds/pikachu.mp3",
-            "pipi": "sounds/pee.mp3",
-            "pisser": "sounds/pee.mp3",
+            "bière": "sounds/pee.mp3",
             "playstation": "sounds/playstation.mp3",
             "pleurer": "sounds/pleurer.mp3",
             "pleurnicher": "sounds/pleurer.mp3",
@@ -93,6 +93,7 @@ class AudioCommandRecognizer:
             "pokémon": "sounds/pikachu.mp3",
             "predator": "sounds/predator.mp3",
             "problème": "sounds/problem.mp3",
+            "houston": "sounds/problem.mp3",
             "ps5": "sounds/playstation.mp3",
             "putin": "sounds/russia.mp3",
             "réserver": "sounds/résa.mp3",
@@ -117,7 +118,22 @@ class AudioCommandRecognizer:
             "paradoxal": "sounds/pasfaux.mp3",
             "incongru": "sounds/pasfaux.mp3",
             "chiffrement": "sounds/pasfaux.mp3",
-            "j'ai une théorie": "sounds/chagrin.mp3"
+            "j'ai une théorie": "sounds/chagrin.mp3",
+            "nathalie": "sounds/bisou.mp3",
+            "bisou": "sounds/bisou.mp3",
+            "bisous": "sounds/bisou.mp3",
+            "gévaudan": "sounds/bete.mp3",
+            "michel": "sounds/michel.mp3",
+            "gérard": "sounds/michel.mp3",
+            "dominique": "sounds/michel.mp3",
+            "perceval": "sounds/chagrin.mp3",
+            "pilote": "sounds/pilote.mp3",
+            "père": "sounds/papa.mp3",
+            "papa": "sounds/papa.mp3",
+            "astucieux": "sounds/debile.mp3",
+            "italie": "sounds/italie.mp3",
+            "mozzarella": "sounds/italie.mp3",
+            "parmesan": "sounds/italie.mp3"
         }
         
         # Dictionnaire des actions système
@@ -166,6 +182,11 @@ class AudioCommandRecognizer:
             "contournement": {
                 "type": "fichier",
                 "path": r"apps/psiphon.exe",
+                "action": "open_file"
+            },
+            "redémarrer": {
+                "type": "fichier",
+                "path": r"apps/restart.bat",
                 "action": "open_file"
             },
             "redémarrage": {
