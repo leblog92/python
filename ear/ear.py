@@ -306,13 +306,13 @@ class AudioCommandRecognizer:
         self.on_listening_stop = None
         
     def calibrer_micro(self):
-        """Calibration"""
+        """microphone calibration"""
         print("")
         print("=====================")
-        print("Calibration du microphone... Parlez maintenant.")
+        print("microphone calibration... speak now.")
         with self.microphone as source:
             self.recognizer.adjust_for_ambient_noise(source, duration=2)
-        print("Calibration terminée!")
+        print("calibration completed!")
         print("=====================")
     
     def jouer_audio(self, fichier):
