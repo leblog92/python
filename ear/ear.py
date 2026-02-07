@@ -82,6 +82,7 @@ class AudioCommandRecognizer:
             "je suis choqué": "sounds/shock.mp3",
             "j'en ai marre": "sounds/marre.mp3",
             "jérémy": "sounds/souffrance.mp3",
+            "je reviens": "sounds/terminator.mp3",
             "johnny": "sounds/coucou2.mp3",
             "léon": "sounds/leon.mp3",
             "malheur": "sounds/malheur.mp3",
