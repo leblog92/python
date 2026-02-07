@@ -53,6 +53,7 @@ class AudioCommandRecognizer:
             "expiré": "sounds/expire.mp3",
             "expirer": "sounds/expire.mp3",
             "facebook": "sounds/facebook.mp3",
+            "faim": "sounds/faim.mp3",
             "fc 24": "sounds/fifa.mp3",
             "fc 25": "sounds/fifa.mp3",
             "fc 26": "sounds/fifa.mp3",
@@ -131,15 +132,20 @@ class AudioCommandRecognizer:
             "gros problème": "sounds/problem.mp3",
             "ps5": "sounds/playstation.mp3",
             "putin": "sounds/russia.mp3",
+            "rembobine": "sounds/rewind.mp3",
             "rembobiner": "sounds/rewind.mp3",
+            "rembobines": "sounds/rewind.mp3",
             "réserver": "sounds/resa.mp3",
+            "reste en vie": "sounds/staying.mp3",
             "réunion": "sounds/nono.mp3",
             "rire": "sounds/nelson.mp3",
             "romantique": "sounds/romantique.mp3",
             "russe": "sounds/cnormal.mp3",
             "russie": "sounds/cnormal.mp3",
-            "samurai": "sounds/samurai.mp3",
+            "samouraï": "sounds/samurai.mp3",
             "saxophone": "sounds/saxophone.mp3",
+            "seul": "sounds/solitude.mp3",
+            "seule": "sounds/solitude.mp3",
             "solitude": "sounds/solitude.mp3",
             "sonic": "sounds/sonic.mp3",
             "star wars": "sounds/star.mp3",
@@ -274,10 +280,10 @@ class AudioCommandRecognizer:
                 },
                 "action": "launch_app"
             },
-            "bloc-notes": {
+            "bloc-note": {
                 "type": "app",
                 "command": {
-                    "windows": "notepad++.exe",
+                    "windows": "notepad.exe",
                     "linux": "gedit",
                     "mac": "open -a 'TextEdit'"
                 },
@@ -308,13 +314,13 @@ class AudioCommandRecognizer:
         self.on_listening_stop = None
         
     def calibrer_micro(self):
-        """Calibration"""
+        """microphone calibration"""
         print("")
         print("=====================")
-        print("Calibration du microphone... Parlez maintenant.")
+        print("microphone calibration... speak now.")
         with self.microphone as source:
             self.recognizer.adjust_for_ambient_noise(source, duration=2)
-        print("Calibration terminée!")
+        print("calibration completed!")
         print("=====================")
     
     def jouer_audio(self, fichier):
