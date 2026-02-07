@@ -1,1 +1,7 @@
+# .gitignore
 ear/__pycache__/ear_gui.cpython-313.pyc
+# .gitignore
+ear/meteo/.env.example
+ear/meteo/.env
+ear/meteo/.env.local
+ear/meteo/*.env
