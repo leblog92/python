@@ -1,5 +1,0 @@
-# .gitignore
-.env.example
-.env
-.env.local
-*.env
