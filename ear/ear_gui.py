@@ -80,7 +80,7 @@ class VoiceAssistantGUI:
         title_label.pack(side="left")
         
         # Indicateur d'état
-        self.status_var = tk.StringVar(value="🔴 Arrêté")
+        self.status_var = tk.StringVar(value="🔴 stopped")
         self.status_label = tk.Label(
             header_frame,
             textvariable=self.status_var,
@@ -116,7 +116,7 @@ class VoiceAssistantGUI:
         # Bouton de calibration
         ttk.Button(
             left_panel,
-            text="🎤 Calibrer microphone",
+            text="microphone calibration",
             command=self.calibrate_mic,
             width=20
         ).pack(pady=5)
@@ -124,7 +124,7 @@ class VoiceAssistantGUI:
         # Bouton test audio
         ttk.Button(
             left_panel,
-            text="🔊 Tester le son",
+            text="sound test",
             command=self.test_audio,
             width=20
         ).pack(pady=5)
@@ -307,8 +307,8 @@ class VoiceAssistantGUI:
     def start_listening(self):
         """Démarre l'écoute"""
         self.recognizer.is_listening = True
-        self.status_var.set("🟢 En écoute...")
-        self.listen_btn.configure(text="⏸ Arrêter l'écoute")
+        self.status_var.set("🟢 listening...")
+        self.listen_btn.configure(text="⏸ stop listening")
         self.log_message("Système", "Écoute activée")
         
         # Démarrer le thread d'écoute
@@ -321,13 +321,13 @@ class VoiceAssistantGUI:
     def stop_listening(self):
         """Arrête l'écoute"""
         self.recognizer.is_listening = False
-        self.status_var.set("🔴 Arrêté")
-        self.listen_btn.configure(text="▶ Démarrer l'écoute")
+        self.status_var.set("🔴 stopped")
+        self.listen_btn.configure(text="▶ start listening")
         self.log_message("Système", "Écoute désactivée")
     
     def calibrate_mic(self):
         """Calibre le microphone"""
-        self.log_message("Système", "Calibration du microphone en cours...")
+        self.log_message("Système", "microphone calibration ...")
         threading.Thread(
             target=self.recognizer.calibrer_micro,
             daemon=True
@@ -339,7 +339,7 @@ class VoiceAssistantGUI:
         pygame.mixer.init()
         try:
             # Jouer un son de test si disponible
-            test_sound = "sounds/coucou2.mp3"
+            test_sound = "sounds/bac.mp3"
             if os.path.exists(test_sound):
                 self.log_message("Test", "Lecture du son de test...")
                 pygame.mixer.music.load(test_sound)
