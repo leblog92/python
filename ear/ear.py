@@ -200,6 +200,11 @@ class AudioCommandRecognizer:
                 "path": r"apps/video.bat",
                 "action": "open_file"
             },
+            "gmail": {
+                "type": "fichier",
+                "path": r"apps/gma.lnk",
+                "action": "open_file"
+            },
             "numérique pour tous": {
                 "type": "fichier",
                 "path": r"apps/npm.lnk",
@@ -268,6 +273,11 @@ class AudioCommandRecognizer:
             "recherche profonde": {
                 "type": "fichier",
                 "path": r"apps/ds.lnk",
+                "action": "open_file"
+            },
+            "outlook": {
+                "type": "fichier",
+                "path": r"apps/out.lnk",
                 "action": "open_file"
             },
             # Applications système
