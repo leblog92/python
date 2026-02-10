@@ -246,6 +246,16 @@ class AudioCommandRecognizer:
                 "path": r"meteo/launch_direct.bat",
                 "action": "open_file"
             },
+            "prévision météo": {
+                "type": "fichier",
+                "path": r"meteo/launch_direct.bat",
+                "action": "open_file"
+            },
+            "quel temps fera-t-il demain": {
+                "type": "fichier",
+                "path": r"meteo/launch_direct.bat",
+                "action": "open_file"
+            },
             "redémarrage": {
                 "type": "fichier",
                 "path": r"apps/restart.bat",
