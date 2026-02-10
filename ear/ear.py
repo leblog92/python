@@ -241,6 +241,11 @@ class AudioCommandRecognizer:
                 "path": r"apps/restart.bat",
                 "action": "open_file"
             },
+            "météo demain": {
+                "type": "fichier",
+                "path": r"meteo/launch_direct.bat",
+                "action": "open_file"
+            },
             "redémarrage": {
                 "type": "fichier",
                 "path": r"apps/restart.bat",

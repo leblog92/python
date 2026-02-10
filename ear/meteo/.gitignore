@@ -1,10 +1,12 @@
-# Environnement
+# Fichiers d'environnement
 .env
-.env.example
 .env.local
-.env.development.local
-.env.test.local
-.env.production.local
+*.env
+
+# Fichiers audio générés
+*.mp3
+*.wav
+*.ogg
 
 # Python
 __pycache__/
@@ -27,7 +29,14 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.pytest_cache/
 
-# Fichiers temporaires
-*.mp3
-temp_*
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Système
+.DS_Store
+Thumbs.db
