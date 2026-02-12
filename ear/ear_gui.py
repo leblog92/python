@@ -116,7 +116,7 @@ class VoiceAssistantGUI:
         # Bouton de calibration
         ttk.Button(
             left_panel,
-            text="microphone calibration",
+            text="audio calibration",
             command=self.calibrate_mic,
             width=20
         ).pack(pady=5)
@@ -181,7 +181,7 @@ class VoiceAssistantGUI:
         # Affichage des commandes reconnues
         log_frame = tk.LabelFrame(
             right_panel,
-            text="📝 Journal d'activité",
+            text="📝 Events log",
             font=("Segoe UI", 11, "bold"),
             fg=self.fg_color,
             bg=self.bg_color,
