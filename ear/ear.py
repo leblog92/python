@@ -34,7 +34,7 @@ class AudioCommandRecognizer:
             "biscuit": "sounds/biscuit.mp3",
             "bisou": "sounds/bisou.mp3",
             "bisous": "sounds/bisou.mp3",
-            "boïte à coucou": "sounds/bac.mp3",
+            "boîte à coucou": "sounds/bac.mp3",
             "bonne année": "sounds/new-year.mp3",
             "bye": "sounds/bye.mp3",
             "caliméro": "sounds/calimero.mp3",
