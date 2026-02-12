@@ -298,7 +298,7 @@ class VoiceAssistantGUI:
         self.recognizer.on_listening_stop = self.on_listening_stop
         
     def toggle_listening(self):
-        """Active/Désactive l'écoute"""
+        """Activate/Désactivate listening"""
         if not self.recognizer.is_listening:
             self.start_listening()
         else:
@@ -309,7 +309,7 @@ class VoiceAssistantGUI:
         self.recognizer.is_listening = True
         self.status_var.set("🟢 listening...")
         self.listen_btn.configure(text="⏸ stop listening")
-        self.log_message("Système", "Écoute activée")
+        self.log_message("Système", "Listening activated")
         
         # Démarrer le thread d'écoute
         self.listen_thread = threading.Thread(
@@ -323,11 +323,11 @@ class VoiceAssistantGUI:
         self.recognizer.is_listening = False
         self.status_var.set("🔴 stopped")
         self.listen_btn.configure(text="▶ start listening")
-        self.log_message("Système", "Écoute désactivée")
+        self.log_message("Système", "Listening desactivated")
     
     def calibrate_mic(self):
         """Calibre le microphone"""
-        self.log_message("Système", "microphone calibration ...")
+        self.log_message("Système", "audio calibration ...")
         threading.Thread(
             target=self.recognizer.calibrer_micro,
             daemon=True
@@ -339,7 +339,7 @@ class VoiceAssistantGUI:
         pygame.mixer.init()
         try:
             # Jouer un son de test si disponible
-            test_sound = "sounds/bac.mp3"
+            test_sound = "sounds/lovecraft.mp3"
             if os.path.exists(test_sound):
                 self.log_message("Test", "Lecture du son de test...")
                 pygame.mixer.music.load(test_sound)
