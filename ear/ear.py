@@ -36,19 +36,8 @@ class AudioCommandRecognizer:
             "bisous": "sounds/bisou.mp3",
             "boïte à coucou": "sounds/bac.mp3",
             "bonne année": "sounds/new-year.mp3",
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
             "bye": "sounds/bye.mp3",
-=======
-            "caliméro": "sounds/caliméro.mp3",
->>>>>>> Stashed changes
-=======
-            "caliméro": "sounds/caliméro.mp3",
->>>>>>> Stashed changes
-=======
-            "caliméro": "sounds/caliméro.mp3",
->>>>>>> Stashed changes
+            "caliméro": "sounds/calimero.mp3",
             "castlevania": "sounds/castlevania.mp3",
             "cavalier": "sounds/cheval.mp3",
             "c'est nul": "sounds/cnul.mp3",
