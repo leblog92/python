@@ -382,7 +382,7 @@ class AudioCommandRecognizer:
         """microphone calibration"""
         print("")
         print("=====================")
-        print("microphone calibration... speak now.")
+        print("audio calibration... speak now.")
         with self.microphone as source:
             self.recognizer.adjust_for_ambient_noise(source, duration=2)
         print("calibration completed!")
