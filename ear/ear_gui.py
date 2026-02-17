@@ -319,7 +319,7 @@ class VoiceAssistantGUI:
         self.listen_thread.start()
     
     def stop_listening(self):
-        """Arrête l'écoute"""
+        """Stop listening"""
         self.recognizer.is_listening = False
         self.status_var.set("🔴 stopped")
         self.listen_btn.configure(text="▶ start listening")
@@ -371,11 +371,11 @@ class VoiceAssistantGUI:
         self.message_queue.put(("error", error_message))
     
     def on_listening_start(self):
-        """Callback quand l'écoute commence"""
+        """Callback when listening starts"""
         self.message_queue.put(("listening_start", None))
     
     def on_listening_stop(self):
-        """Callback quand l'écoute s'arrête"""
+        """Callback when listening stops"""
         self.message_queue.put(("listening_stop", None))
     
     def log_message(self, source, message, is_error=False):
@@ -485,11 +485,11 @@ class VoiceAssistantGUI:
                     self.log_message("Erreur", error_msg, is_error=True)
                 
                 elif msg_type == "listening_start":
-                    self.status_var.set("🟢 En écoute...")
+                    self.status_var.set("🟢 Listening...")
                     self.activity_led.config(fg=self.success_color)
                 
                 elif msg_type == "listening_stop":
-                    self.status_var.set("🔴 Arrêté")
+                    self.status_var.set("🔴 Stopped")
                     self.activity_led.config(fg="gray")
                 
                 self.message_queue.task_done()
