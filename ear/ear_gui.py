@@ -339,7 +339,7 @@ class VoiceAssistantGUI:
         pygame.mixer.init()
         try:
             # Jouer un son de test si disponible
-            test_sound = "sounds/lovecraft.mp3"
+            test_sound = "sounds/thx.mp3"
             if os.path.exists(test_sound):
                 self.log_message("Test", "Lecture du son de test...")
                 pygame.mixer.music.load(test_sound)

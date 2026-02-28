@@ -5,7 +5,6 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 from pygame.locals import *
 import sys
-from ar_utils import ARRenderer
 
 class AugmentedRealityApp:
     def __init__(self):
@@ -15,29 +14,28 @@ class AugmentedRealityApp:
             print("Erreur: Impossible d'ouvrir la caméra")
             sys.exit(1)
         
-        # Paramètres de la caméra
+        # Configuration de la caméra
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        
+        # Dimensions de l'écran
+        self.screen_width = 1280
+        self.screen_height = 720
         
         # Initialisation de Pygame et OpenGL
         self.init_pygame_opengl()
         
-        # Initialisation du renderer AR
-        self.ar_renderer = ARRenderer()
+        # Initialisation du détecteur ArUco
+        self.init_aruco()
         
-        # Initialisation du détecteur ArUco (version corrigée)
-        self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_250)
-        self.aruco_params = cv2.aruco.DetectorParameters()
+        # Matrice de caméra pour la projection 3D
+        self.camera_matrix = np.array([
+            [640, 0, 320],
+            [0, 640, 240],
+            [0, 0, 1]
+        ], dtype=np.float32)
         
-        # Pour OpenCV 4.7.0 et plus, utiliser ArUcoDetector
-        if hasattr(cv2.aruco, 'ArucoDetector'):
-            self.aruco_detector = cv2.aruco.ArucoDetector(self.aruco_dict, self.aruco_params)
-        else:
-            self.aruco_detector = None
-            
-        # Variables pour les marqueurs
-        self.corners = None
-        self.ids = None
+        self.dist_coeffs = np.zeros((4, 1))
         
         self.running = True
         
@@ -46,9 +44,6 @@ class AugmentedRealityApp:
         pygame.init()
         
         # Configuration de l'affichage OpenGL
-        self.screen_width = 1280
-        self.screen_height = 720
-        
         pygame.display.set_mode(
             (self.screen_width, self.screen_height),
             DOUBLEBUF | OPENGL
@@ -72,56 +67,60 @@ class AugmentedRealityApp:
         glLightfv(GL_LIGHT0, GL_AMBIENT, (0.3, 0.3, 0.3, 1))
         glLightfv(GL_LIGHT0, GL_DIFFUSE, (1, 1, 1, 1))
         
+    def init_aruco(self):
+        """Initialise le détecteur ArUco"""
+        try:
+            # Pour les versions récentes d'OpenCV
+            self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_250)
+            self.aruco_params = cv2.aruco.DetectorParameters()
+            self.detector = cv2.aruco.ArucoDetector(self.aruco_dict, self.aruco_params)
+            print("Détecteur ArUco initialisé (nouvelle méthode)")
+        except AttributeError:
+            try:
+                # Pour les anciennes versions
+                self.aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_6X6_250)
+                self.aruco_params = cv2.aruco.DetectorParameters_create()
+                self.detector = None
+                print("Détecteur ArUco initialisé (ancienne méthode)")
+            except Exception as e:
+                print(f"Erreur lors de l'initialisation d'ArUco: {e}")
+                sys.exit(1)
+    
     def capture_frame(self):
-        """Capture une frame de la caméra"""
+        """Capture une frame de la caméra avec la bonne orientation"""
         ret, frame = self.cap.read()
         if ret:
-            return cv2.flip(frame, 1)  # Flip horizontal pour un rendu miroir
+            # IMPORTANT: Ne pas flip l'image pour garder l'orientation naturelle
+            # La caméra est déjà dans le bon sens
+            return frame
         return None
     
     def detect_markers(self, frame):
         """Détecte les marqueurs ArUco dans l'image"""
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
-        # Méthode de détection selon la version d'OpenCV
-        if self.aruco_detector is not None:
-            # Nouvelle méthode (OpenCV 4.7+)
-            corners, ids, _ = self.aruco_detector.detectMarkers(gray)
+        if self.detector is not None:
+            # Nouvelle méthode
+            corners, ids, _ = self.detector.detectMarkers(gray)
         else:
             # Ancienne méthode
-            corners, ids, _ = cv2.aruco.detectMarkers(gray, self.aruco_dict, parameters=self.aruco_params)
+            corners, ids, _ = cv2.aruco.detectMarkers(
+                gray, self.aruco_dict, parameters=self.aruco_params
+            )
         
         return corners, ids
     
-    def render_scene(self, frame, corners, ids):
-        """Rendu de la scène AR"""
-        # Dessiner le fond vidéo
-        self.draw_video_background(frame)
-        
-        if ids is not None and len(ids) > 0:
-            # Pour chaque marqueur détecté
-            for i in range(len(ids)):
-                # Calcul de la pose du marqueur
-                rvec, tvec, _ = cv2.aruco.estimatePoseSingleMarkers(
-                    corners[i], 0.05, self.ar_renderer.camera_matrix, 
-                    self.ar_renderer.dist_coeffs
-                )
-                
-                # Sauvegarder la position pour le rendu 3D
-                self.ar_renderer.marker_positions.append((tvec[0][0], rvec[0][0]))
-        
-        # Rendu des objets 3D
-        self.ar_renderer.render_all_objects()
-        
     def draw_video_background(self, frame):
-        """Dessine la vidéo en arrière-plan"""
+        """Dessine la vidéo en arrière-plan avec la bonne orientation"""
         # Convertir l'image OpenCV pour Pygame
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame_rgb = np.rot90(frame_rgb)  # Rotation pour l'orientation correcte
-        frame_surface = pygame.surfarray.make_surface(frame_rgb)
         
         # Redimensionner si nécessaire
-        frame_surface = pygame.transform.scale(frame_surface, (self.screen_width, self.screen_height))
+        if frame_rgb.shape[1] != self.screen_width or frame_rgb.shape[0] != self.screen_height:
+            frame_rgb = cv2.resize(frame_rgb, (self.screen_width, self.screen_height))
+        
+        # Convertir en surface Pygame (pas de rotation pour garder l'orientation correcte)
+        frame_surface = pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
         
         # Sauvegarder les états OpenGL
         glMatrixMode(GL_PROJECTION)
@@ -136,11 +135,19 @@ class AugmentedRealityApp:
         glDisable(GL_DEPTH_TEST)
         glDisable(GL_LIGHTING)
         
-        # Dessiner la texture
-        glEnable(GL_TEXTURE_2D)
-        texture_id = self.surface_to_texture(frame_surface)
-        glBindTexture(GL_TEXTURE_2D, texture_id)
+        # Créer et appliquer la texture
+        texture_data = pygame.image.tostring(frame_surface, "RGB", 1)
         
+        texture_id = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, texture_id)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, self.screen_width, self.screen_height, 
+                     0, GL_RGB, GL_UNSIGNED_BYTE, texture_data)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        
+        glEnable(GL_TEXTURE_2D)
+        
+        # Dessiner un quad avec la texture
         glBegin(GL_QUADS)
         glTexCoord2f(0, 0); glVertex2f(0, 0)
         glTexCoord2f(1, 0); glVertex2f(self.screen_width, 0)
@@ -159,32 +166,165 @@ class AugmentedRealityApp:
         glPopMatrix()
         glMatrixMode(GL_MODELVIEW)
         glPopMatrix()
+    
+    def draw_3d_object(self, tvec, rvec, object_type=0):
+        """Dessine un objet 3D à la position du marqueur"""
+        glPushMatrix()
         
-    def surface_to_texture(self, surface):
-        """Convertit une surface Pygame en texture OpenGL"""
-        try:
-            texture_data = pygame.image.tostring(surface, "RGB", 1)
-            width, height = surface.get_size()
-            
-            texture_id = glGenTextures(1)
-            glBindTexture(GL_TEXTURE_2D, texture_id)
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, texture_data)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-            
-            return texture_id
-        except Exception as e:
-            print(f"Erreur lors de la création de la texture: {e}")
-            return None
+        # Convertir les vecteurs en matrice de rotation
+        rmat, _ = cv2.Rodrigues(rvec)
+        
+        # Créer la matrice de transformation
+        transform = np.eye(4)
+        transform[:3, :3] = rmat
+        # Ajuster l'échelle et la position
+        transform[:3, 3] = tvec * 15
+        
+        # Appliquer la transformation
+        glMultMatrixf(transform.T.flatten())
+        
+        # Dessiner l'objet selon le type
+        if object_type == 0:  # Cube
+            self.draw_cube()
+        elif object_type == 1:  # Sphère
+            self.draw_sphere()
+        elif object_type == 2:  # Pyramide
+            self.draw_pyramid()
+        elif object_type == 3:  # Tétraèdre
+            self.draw_tetrahedron()
+        
+        glPopMatrix()
+    
+    def draw_cube(self):
+        """Dessine un cube coloré"""
+        vertices = [
+            (1, -1, -1), (1, 1, -1), (-1, 1, -1), (-1, -1, -1),
+            (1, -1, 1), (1, 1, 1), (-1, -1, 1), (-1, 1, 1)
+        ]
+        
+        faces = [
+            (0, 1, 2, 3),  # Face avant
+            (4, 5, 6, 7),  # Face arrière
+            (1, 5, 7, 2),  # Face droite
+            (0, 3, 6, 4),  # Face gauche
+            (3, 2, 7, 6),  # Face haut
+            (0, 4, 5, 1)   # Face bas
+        ]
+        
+        colors = [
+            (1, 0, 0), (0, 1, 0), (0, 0, 1),
+            (1, 1, 0), (1, 0, 1), (0, 1, 1)
+        ]
+        
+        # Dessiner les faces
+        glBegin(GL_QUADS)
+        for i, face in enumerate(faces):
+            glColor3fv(colors[i])
+            for vertex in face:
+                glVertex3fv(vertices[vertex])
+        glEnd()
+        
+        # Dessiner les arêtes en noir
+        glColor3f(0, 0, 0)
+        glLineWidth(2)
+        glBegin(GL_LINES)
+        edges = [
+            (0, 1), (1, 2), (2, 3), (3, 0),
+            (4, 5), (5, 7), (7, 6), (6, 4),
+            (0, 4), (1, 5), (2, 7), (3, 6)
+        ]
+        for edge in edges:
+            for vertex in edge:
+                glVertex3fv(vertices[vertex])
+        glEnd()
+    
+    def draw_sphere(self):
+        """Dessine une sphère"""
+        glColor3f(0, 0, 1)  # Bleu
+        quadric = gluNewQuadric()
+        gluSphere(quadric, 0.7, 32, 16)
+        gluDeleteQuadric(quadric)
+    
+    def draw_pyramid(self):
+        """Dessine une pyramide"""
+        vertices = [
+            (0, 1, 0),      # Sommet
+            (1, -1, 1),      # Base avant droit
+            (-1, -1, 1),     # Base avant gauche
+            (-1, -1, -1),    # Base arrière gauche
+            (1, -1, -1)      # Base arrière droit
+        ]
+        
+        # Faces triangulaires
+        faces = [
+            (0, 1, 2),  # Face avant
+            (0, 2, 3),  # Face gauche
+            (0, 3, 4),  # Face arrière
+            (0, 4, 1)   # Face droite
+        ]
+        
+        colors = [(1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0)]
+        
+        glBegin(GL_TRIANGLES)
+        for i, face in enumerate(faces):
+            glColor3fv(colors[i])
+            for vertex in face:
+                glVertex3fv(vertices[vertex])
+        glEnd()
+        
+        # Base de la pyramide
+        glColor3f(0.5, 0.5, 0.5)
+        glBegin(GL_QUADS)
+        for vertex in [1, 2, 3, 4]:
+            glVertex3fv(vertices[vertex])
+        glEnd()
+    
+    def draw_tetrahedron(self):
+        """Dessine un tétraèdre"""
+        vertices = [
+            (0, 1, 0),
+            (0.94, -0.33, 0.54),
+            (-0.47, -0.33, 0.94),
+            (-0.47, -0.33, -0.94)
+        ]
+        
+        faces = [(0, 1, 2), (0, 2, 3), (0, 3, 1), (1, 3, 2)]
+        colors = [(1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0)]
+        
+        glBegin(GL_TRIANGLES)
+        for i, face in enumerate(faces):
+            glColor3fv(colors[i])
+            for vertex in face:
+                glVertex3fv(vertices[vertex])
+        glEnd()
+    
+    def render_scene(self, frame, corners, ids):
+        """Rend la scène AR complète"""
+        # Dessiner le fond vidéo en premier
+        self.draw_video_background(frame)
+        
+        # Puis dessiner les objets 3D par-dessus
+        if ids is not None and len(ids) > 0:
+            for i in range(len(ids)):
+                # Estimer la pose du marqueur
+                rvec, tvec, _ = cv2.aruco.estimatePoseSingleMarkers(
+                    corners[i], 0.05, self.camera_matrix, self.dist_coeffs
+                )
+                
+                # Dessiner un objet différent selon l'ID du marqueur
+                object_type = ids[i][0] % 4
+                self.draw_3d_object(tvec[0][0], rvec[0][0], object_type)
     
     def run(self):
         """Boucle principale de l'application"""
         clock = pygame.time.Clock()
         
-        print("Application AR démarrée. Appuyez sur ÉCHAP pour quitter.")
-        print("Placez un marqueur ArUco devant la caméra.")
+        print("Application AR démarrée!")
+        print("Placez des marqueurs ArUco devant la caméra")
+        print("Appuyez sur ÉCHAP pour quitter")
         
         while self.running:
+            # Gestion des événements
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
@@ -200,10 +340,7 @@ class AugmentedRealityApp:
             # Détection des marqueurs
             corners, ids = self.detect_markers(frame)
             
-            # Mise à jour des positions des marqueurs
-            self.ar_renderer.marker_positions = []
-            
-            # Nettoyage de l'écran
+            # Effacer l'écran
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
             glLoadIdentity()
             

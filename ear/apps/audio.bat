@@ -5,25 +5,25 @@ echo Compatible with YouTube, Vimeo, TikTok, Twitter, Instagram, Reddit, and hun
 echo.
 
 :start
-REM Check clipboard for URL content
+REM Check clipboard for URL content (sans vérification de validité)
 echo Checking clipboard for URL...
 set url=
-powershell -Command "Add-Type -AssemblyName System.Windows.Forms; $clipText = [Windows.Forms.Clipboard]::GetText(); if ($clipText -match '^https?://[^\s]+$') { Write-Output $clipText }"
+powershell -Command "Add-Type -AssemblyName System.Windows.Forms; $clipText = [Windows.Forms.Clipboard]::GetText(); Write-Output $clipText"
 
 if errorlevel 1 (
     echo Could not access clipboard or PowerShell unavailable.
     goto ask_url
 )
 
-for /f "delims=" %%i in ('powershell -Command "Add-Type -AssemblyName System.Windows.Forms; $clipText = [Windows.Forms.Clipboard]::GetText(); if ($clipText -match \"^https?://[^\s]+$\") { Write-Output $clipText }"') do (
+for /f "delims=" %%i in ('powershell -Command "Add-Type -AssemblyName System.Windows.Forms; $clipText = [Windows.Forms.Clipboard]::GetText(); Write-Output $clipText"') do (
     set "url=%%i"
 )
 
 if defined url (
-    echo Found URL in clipboard: %url%
-    set /p use_clipboard="Use this URL? (Y/N): "
+    echo Found in clipboard: %url%
+    set /p use_clipboard="Use this? (Y/N): "
     if /i "%use_clipboard%"=="y" (
-        echo Using URL from clipboard...
+        echo Using content from clipboard...
         goto download
     ) else if /i "%use_clipboard%"=="n" (
         goto ask_url
@@ -32,7 +32,7 @@ if defined url (
         goto ask_url
     )
 ) else (
-    echo No valid URL found in clipboard.
+    echo Nothing found in clipboard.
     goto ask_url
 )
 

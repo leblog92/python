@@ -32,6 +32,7 @@ class AudioCommandRecognizer:
             "banane": "sounds/banane.mp3",
             "bananes": "sounds/banane.mp3",
             "barbara": "sounds/barbara.mp3",
+            "basile": "sounds/souffrance.mp3",
             "bière": "sounds/biere.mp3",
             "biscuit": "sounds/biscuit.mp3",
             "biscuits": "sounds/biscuit.mp3",
@@ -276,6 +277,11 @@ class AudioCommandRecognizer:
             "redémarrer": {
                 "type": "fichier",
                 "path": r"apps/restart.bat",
+                "action": "open_file"
+            },
+            "météo": {
+                "type": "fichier",
+                "path": r"meteo/launch_direct.bat",
                 "action": "open_file"
             },
             "météo demain": {
