@@ -44,7 +44,7 @@ class AudioCommandRecognizer:
             "calimero": "sounds/calimero.mp3",
             "castlevania": "sounds/castlevania.mp3",
             "cavalier": "sounds/cheval.mp3",
-            "c'est nul": "sounds/nul.mp3",
+            "c'est nul": "sounds/nul0.mp3",
             "j'ai vu ça sur": "sounds/vrai.mp3",
             "tu as vu ça sur": "sounds/vrai.mp3",
             "ça m'énerve": "sounds/enerve.mp3",
