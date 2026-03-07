@@ -49,6 +49,7 @@ class VoiceAssistantGUI:
         self.success_color = "#4CAF50"
         self.error_color = "#f44336"
         self.warning_color = "#ff9800"
+        self.word_color = "#FFD700"  # Couleur or pour les mots détectés
         
         # Main window configuration
         self.root.configure(bg=self.bg_color)
@@ -120,6 +121,14 @@ class VoiceAssistantGUI:
             width=20
         ).pack(pady=5)
         
+        # Clear log button
+        ttk.Button(
+            left_panel,
+            text="clear log",
+            command=self.clear_log,
+            width=20
+        ).pack(pady=5)
+        
         # Separator
         ttk.Separator(left_panel, orient="horizontal").pack(fill="x", pady=20)
         
@@ -151,6 +160,17 @@ class VoiceAssistantGUI:
             bg=self.bg_color
         )
         self.activity_led.pack(pady=10)
+        
+        # Word count
+        self.word_count_var = tk.StringVar(value="Words detected: 0")
+        self.word_count_label = tk.Label(
+            left_panel,
+            textvariable=self.word_count_var,
+            font=("Segoe UI", 10),
+            fg=self.fg_color,
+            bg=self.bg_color
+        )
+        self.word_count_label.pack(pady=5)
         
         # ===== LOGS AND COMMANDS (Right) =====
         
@@ -206,6 +226,12 @@ class VoiceAssistantGUI:
         self.recognizer.on_error = self.on_error
         self.recognizer.on_listening_start = self.on_listening_start
         self.recognizer.on_listening_stop = self.on_listening_stop
+        self.recognizer.on_word_heard = self.on_word_heard  # Nouveau callback
+        
+    def clear_log(self):
+        """Clear the log text area"""
+        self.log_text.delete(1.0, tk.END)
+        self.log_message("System", "Log cleared")
         
     def toggle_listening(self):
         """Toggles listening on/off"""
@@ -257,6 +283,10 @@ class VoiceAssistantGUI:
         except Exception as e:
             self.log_message("Error", f"Audio test failed: {str(e)}", is_error=True)
     
+    def on_word_heard(self, word_text):
+        """Callback when a word is heard (not necessarily a command)"""
+        self.message_queue.put(("word", word_text))
+    
     def on_command_detected(self, command_text, audio_file=None, action_info=None):
         """Callback when a command is detected"""
         self.command_count += 1
@@ -289,22 +319,28 @@ class VoiceAssistantGUI:
     def log_message(self, source, message, is_error=False):
         """Adds a message to the log"""
         timestamp = datetime.now().strftime("%H:%M:%S")
-        formatted_message = f"[{timestamp}] {source}: {message}"
+        formatted_message = f"[{timestamp}] {source}: {message}\n"
         
-        self.log_text.insert(tk.END, formatted_message + "\n")
+        self.log_text.insert(tk.END, formatted_message)
         self.log_text.see(tk.END)
         
         # Apply color based on message type
+        last_line_start = self.log_text.index(f"end-2c linestart")
+        last_line_end = "end-1c"
+        
         if is_error:
-            self.log_text.tag_add("error", "end-2c", "end-1c")
+            self.log_text.tag_add("error", last_line_start, last_line_end)
         elif source == "Command":
-            self.log_text.tag_add("command", "end-2c", "end-1c")
+            self.log_text.tag_add("command", last_line_start, last_line_end)
         elif source == "System":
-            self.log_text.tag_add("system", "end-2c", "end-1c")
+            self.log_text.tag_add("system", last_line_start, last_line_end)
+        elif source == "Word":
+            self.log_text.tag_add("word", last_line_start, last_line_end)
     
     def update_audio_level(self):
         """Updates the audio level bar (simulation)"""
         if self.recognizer.is_listening:
+            # Simulate audio level - in reality, you'd get this from the microphone
             level = random.uniform(0.1, 0.8)
             self.audio_level['value'] = min(level * 100, 100)
             
@@ -323,11 +359,19 @@ class VoiceAssistantGUI:
     
     def check_queue(self):
         """Checks messages in the queue (called periodically)"""
+        word_count = 0
+        
         try:
             while True:
                 msg_type, *data = self.message_queue.get_nowait()
                 
-                if msg_type == "command":
+                if msg_type == "word":
+                    word_text = data[0]
+                    word_count += 1
+                    self.word_count_var.set(f"Words detected: {word_count}")
+                    self.log_message("Word", word_text)
+                
+                elif msg_type == "command":
                     command_text, audio_file, action_info = data
                     self.last_command_var.set(f'"{command_text}"')
                     
@@ -354,10 +398,12 @@ class VoiceAssistantGUI:
                 elif msg_type == "listening_start":
                     self.status_var.set("🟢 listening...")
                     self.activity_led.config(fg=self.success_color)
+                    self.log_message("System", "Started listening")
                 
                 elif msg_type == "listening_stop":
                     self.status_var.set("🔴 stopped")
                     self.activity_led.config(fg="gray")
+                    self.log_message("System", "Stopped listening")
                 
                 self.message_queue.task_done()
                 
@@ -372,6 +418,7 @@ class VoiceAssistantGUI:
         self.log_text.tag_config("error", foreground=self.error_color)
         self.log_text.tag_config("command", foreground=self.success_color)
         self.log_text.tag_config("system", foreground=self.accent_color)
+        self.log_text.tag_config("word", foreground=self.word_color)
         
         # Start periodic updates
         self.update_audio_level()

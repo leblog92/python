@@ -1,0 +1,1 @@
+CreateObject("Wscript.Shell").Run "pythonw ear.py", 0, False

@@ -5,7 +5,6 @@ import os
 import subprocess
 import threading
 import platform
-import webbrowser
 import sys
 
 class AudioCommandRecognizer:
@@ -216,8 +215,6 @@ class AudioCommandRecognizer:
             "venu d'ailleurs": "sounds/xfiles.mp3",
             "venus d'ailleurs": "sounds/xfiles.mp3",
             "virus": "sounds/virus.mp3",
-            "une autre galaxie": "sounds/xfiles.mp3",
-            "une autre planète": "sounds/xfiles.mp3",
             "vomir": "sounds/vomir.mp3",
             "vous ne passerez pas": "sounds/vous_ne_passerez_pas.mp3",
             "warhammer": "sounds/warhammer.mp3",
@@ -363,7 +360,7 @@ class AudioCommandRecognizer:
                 "command": {
                     "windows": "calc.exe",
                     "linux": "gnome-calculator",
-                    "mac": "Calculator"
+                    "darwin": "Calculator"
                 },
                 "action": "launch_app"
             },
@@ -372,7 +369,7 @@ class AudioCommandRecognizer:
                 "command": {
                     "windows": "notepad.exe",
                     "linux": "gedit",
-                    "mac": "open -a 'TextEdit'"
+                    "darwin": "open -a 'TextEdit'"
                 },
                 "action": "launch_app"
             },
@@ -381,7 +378,7 @@ class AudioCommandRecognizer:
                 "command": {
                     "windows": "explorer.exe",
                     "linux": "nautilus",
-                    "mac": "open ."
+                    "darwin": "open ."
                 },
                 "action": "launch_app"
             }
@@ -399,16 +396,19 @@ class AudioCommandRecognizer:
         self.on_error = None
         self.on_listening_start = None
         self.on_listening_stop = None
+        self.on_word_heard = None  # Nouveau callback pour les mots entendus
         
     def calibrer_micro(self):
         """microphone calibration"""
-        print("")
-        print("=====================")
-        print("audio calibration... speak now.")
+        # Notifier l'interface graphique
+        if self.on_word_heard:
+            self.on_word_heard("Calibration audio en cours... parlez maintenant.")
+            
         with self.microphone as source:
             self.recognizer.adjust_for_ambient_noise(source, duration=2)
-        print("calibration completed!")
-        print("=====================")
+        
+        if self.on_word_heard:
+            self.on_word_heard("Calibration terminée!")
     
     def jouer_audio(self, fichier):
         """Joue un fichier audio"""
@@ -418,22 +418,21 @@ class AudioCommandRecognizer:
                 if self.on_audio_playing:
                     self.on_audio_playing(fichier)
                 
+                if self.on_word_heard:
+                    self.on_word_heard(f"▶️ Lecture: {os.path.basename(fichier)}")
+                
                 pygame.mixer.music.load(fichier)
                 pygame.mixer.music.play()
-                print(f"Joue: {fichier}")
                 
                 # Attendre que la musique se termine
                 while pygame.mixer.music.get_busy():
                     time.sleep(0.1)
-                    
-                print("Lecture terminée, reprise de l'écoute...")
             else:
-                print(f"Fichier audio non trouvé: {fichier}")
+                if self.on_error:
+                    self.on_error(f"Fichier audio non trouvé: {fichier}")
         except Exception as e:
-            print(f"Erreur lors de la lecture audio: {e}")
-            # Notifier l'erreur à l'interface graphique
             if self.on_error:
-                self.on_error(f"Erreur audio: {str(e)}")
+                self.on_error(f"Erreur lors de la lecture audio: {str(e)}")
     
     def ouvrir_fichier(self, chemin_fichier):
         """Ouvre un fichier avec l'application par défaut"""
@@ -446,32 +445,25 @@ class AudioCommandRecognizer:
             else:
                 chemin_absolu = chemin_fichier
             
-            print(f"Ouverture du fichier: {chemin_absolu}")
-            
             if not os.path.exists(chemin_absolu):
-                print(f"ERREUR: Fichier introuvable: {chemin_absolu}")
-                # Notifier l'erreur à l'interface graphique
                 if self.on_error:
                     self.on_error(f"Fichier introuvable: {chemin_absolu}")
                 return False
             
             if system == "windows":
-                # Sous Windows, utiliser start pour les fichiers batch
                 subprocess.Popen(f'start "" "{chemin_absolu}"', shell=True)
-                
-            elif system == "darwin":  # macOS
+            elif system == "darwin":
                 subprocess.Popen(["open", chemin_absolu])
-            else:  # Linux
+            else:
                 subprocess.Popen(["xdg-open", chemin_absolu])
             
-            print(f"✓ Fichier ouvert avec succès")
+            if self.on_word_heard:
+                self.on_word_heard(f"📂 Fichier ouvert: {os.path.basename(chemin_absolu)}")
             return True
             
         except Exception as e:
-            print(f"✗ Erreur lors de l'ouverture: {e}")
-            # Notifier l'erreur à l'interface graphique
             if self.on_error:
-                self.on_error(f"Erreur ouverture fichier: {str(e)}")
+                self.on_error(f"Erreur lors de l'ouverture: {str(e)}")
             return False
     
     def lancer_programme(self, commande):
@@ -480,21 +472,19 @@ class AudioCommandRecognizer:
             system = platform.system().lower()
             
             if system == "windows":
-                # Pour Windows
                 subprocess.Popen(commande, shell=True)
-            elif system == "darwin":  # macOS
+            elif system == "darwin":
                 subprocess.Popen(commande, shell=True)
-            else:  # Linux
+            else:
                 subprocess.Popen(commande, shell=True)
             
-            print(f"Programme lancé: {commande}")
+            if self.on_word_heard:
+                self.on_word_heard(f"🚀 Programme lancé: {commande}")
             return True
             
         except Exception as e:
-            print(f"Erreur lors du lancement du programme: {e}")
-            # Notifier l'erreur à l'interface graphique
             if self.on_error:
-                self.on_error(f"Erreur lancement programme: {str(e)}")
+                self.on_error(f"Erreur lors du lancement: {str(e)}")
             return False
     
     def executer_action_systeme(self, action_info):
@@ -507,8 +497,6 @@ class AudioCommandRecognizer:
             if os.path.exists(chemin):
                 return self.ouvrir_fichier(chemin)
             else:
-                print(f"Fichier non trouvé: {chemin}")
-                # Notifier l'erreur à l'interface graphique
                 if self.on_error:
                     self.on_error(f"Fichier système non trouvé: {chemin}")
                 return False
@@ -520,8 +508,6 @@ class AudioCommandRecognizer:
             if commande:
                 return self.lancer_programme(commande)
             else:
-                print(f"Commande non disponible pour {system}")
-                # Notifier l'erreur à l'interface graphique
                 if self.on_error:
                     self.on_error(f"Commande non disponible pour {system}")
                 return False
@@ -534,7 +520,10 @@ class AudioCommandRecognizer:
             # Reconnaissance en français
             texte = self.recognizer.recognize_google(audio, language="fr-FR")
             texte = texte.lower()
-            print(f"Vous avez dit: {texte}")
+            
+            # Afficher le texte reconnu dans l'interface
+            if self.on_word_heard:
+                self.on_word_heard(f"🗣️ Mot détecté: \"{texte}\"")
             
             # Vérifier les actions système d'abord
             for commande, action_info in self.system_actions.items():
@@ -549,20 +538,14 @@ class AudioCommandRecognizer:
             return None, None, None
             
         except sr.UnknownValueError:
-            print("Désolé, je n'ai pas compris")
-            # Notifier l'erreur à l'interface graphique
             if self.on_error:
-                self.on_error("Reconnaissance vocale: Audio non compris")
+                self.on_error("Voice recognition: Audio not understood")
             return None, None, None
         except sr.RequestError as e:
-            print(f"Erreur avec le service de reconnaissance: {e}")
-            # Notifier l'erreur à l'interface graphique
             if self.on_error:
-                self.on_error(f"Erreur service reconnaissance: {str(e)}")
+                self.on_error(f"Erreur avec le service de reconnaissance: {str(e)}")
             return None, None, None
         except Exception as e:
-            print(f"Erreur inattendue: {e}")
-            # Notifier l'erreur à l'interface graphique
             if self.on_error:
                 self.on_error(f"Erreur inattendue: {str(e)}")
             return None, None, None
@@ -571,24 +554,18 @@ class AudioCommandRecognizer:
         """Traite la commande détectée"""
         if commande == "stop":
             self.is_listening = False
-            print("Arrêt de l'écoute...")
             return
             
         elif action_info:
-            print(f"Action système détectée: '{commande}'")
-            
             # Notifier l'interface graphique
             if self.on_command_detected:
                 self.on_command_detected(commande, None, action_info)
                 
             success = self.executer_action_systeme(action_info)
             if success and commande in self.commands:
-                # Si une commande audio est aussi associée, la jouer
                 self.jouer_audio(self.commands[commande])
             
         elif commande and fichier_audio:
-            print(f"Commande audio détectée: '{commande}'")
-            
             # Notifier l'interface graphique
             if self.on_command_detected:
                 self.on_command_detected(commande, fichier_audio, None)
@@ -597,8 +574,6 @@ class AudioCommandRecognizer:
     
     def ecouter_et_repondre(self):
         """Écoute en continu et répond aux commandes"""
-        print("Écoute en cours...")
-        
         # Notifier le démarrage de l'écoute
         if self.on_listening_start:
             self.on_listening_start()
@@ -611,8 +586,6 @@ class AudioCommandRecognizer:
                         time.sleep(0.1)
                         continue
                     
-                    # Écouter avec timeout
-                    print("En écoute...")
                     audio = self.recognizer.listen(source, timeout=1, phrase_time_limit=5)
                     
                     # Traiter l'audio
@@ -623,135 +596,57 @@ class AudioCommandRecognizer:
                 except sr.WaitTimeoutError:
                     continue
                 except Exception as e:
-                    print(f"Erreur d'écoute: {e}")
-                    # Notifier l'erreur
                     if self.on_error:
-                        self.on_error(f"Erreur écoute: {str(e)}")
+                        self.on_error(f"Erreur d'écoute: {str(e)}")
         
         # Notifier l'arrêt de l'écoute
         if self.on_listening_stop:
             self.on_listening_stop()
     
-    def ajouter_commande_systeme(self, commande, chemin_fichier=None, programme=None):
-        """Ajoute une nouvelle commande système"""
-        if chemin_fichier:
-            self.system_actions[commande] = {
-                "type": "fichier",
-                "path": chemin_fichier,
-                "action": "open_file"
-            }
-            print(f"Commande système ajoutée: '{commande}' -> {chemin_fichier}")
-            
-        elif programme:
-            self.system_actions[commande] = {
-                "type": "app",
-                "command": programme,
-                "action": "launch_app"
-            }
-            print(f"Commande système ajoutée: '{commande}' -> {programme}")
-    
     def demarrer(self):
         """Démarre le système de reconnaissance"""
-        print("=== Système de Reconnaissance Vocale ===")
-        print("Commandes disponibles:")
-        
-        print("\nCommandes audio:")
-        for commande in self.commands.keys():
-            print(f" - {commande}")
-        
-        print("\nCommandes système:")
-        for commande in self.system_actions.keys():
-            print(f" - {commande}")
-        
         self.calibrer_micro()
         self.is_listening = True
         
-        # Démarrer dans un thread pour permettre l'arrêt propre
+        # Démarrer dans un thread
         self.thread_ecoute = threading.Thread(target=self.ecouter_et_repondre)
         self.thread_ecoute.daemon = True
         self.thread_ecoute.start()
-        
-        # Maintenir le programme actif
-        try:
-            while self.is_listening:
-                time.sleep(0.1)
-        except KeyboardInterrupt:
-            self.is_listening = False
-            print("\nProgramme arrêté par l'utilisateur")
-        finally:
-            pygame.mixer.quit()
 
 
-def creer_fichiers_exemple():
-    """Crée des fichiers audio d'exemple (à remplacer par vos propres fichiers)"""
+def verifier_fichiers_audio():
+    """Vérifie la présence des fichiers audio (sans affichage console)"""
     sounds_dir = "sounds"
-    
-    # Message pour indiquer qu'il faut ajouter des vrais fichiers audio
-    fichiers_necessaires = [
-        "au_revoir.mp3", "bonjour.mp3", "expire.mp3", 
-        "inscription.mp3", "matthieu.mp3", "merci.mp3",
-        "modalites.mp3", "olivier.mp3", "playstation.mp3",
-        "nintendo.mp3", "xbox.mp3", "mario.mp3", "sonic.mp3",
-        "vous_ne_passerez_pas.mp3", "coucou.mp3", "hoc.mp3",
-        "windows.mp3"
-    ]
-    
     fichiers_manquants = []
-    for fichier in fichiers_necessaires:
-        chemin = os.path.join(sounds_dir, fichier)
-        if not os.path.exists(chemin):
-            fichiers_manquants.append(fichier)
     
-    if fichiers_manquants:
-        print("\n⚠️ Fichiers audio manquants:")
-        for fichier in fichiers_manquants:
-            print(f"   - {fichier}")
-        print("\nPour utiliser l'application:")
-        print("1. Ajoutez vos fichiers MP3 dans le dossier 'sounds/'")
-        print("2. Modifiez le dictionnaire 'commands' si nécessaire")
-        print("3. Lancez le programme")
+    if os.path.exists(sounds_dir):
+        return True
     else:
-        print("✓ Tous les fichiers audio sont présents. Lancement possible.")
+        os.makedirs(sounds_dir)
+        return False
 
 
 if __name__ == "__main__":
-    # Changer le répertoire de travail vers le dossier du script
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    os.chdir(script_dir)
-    
-    # Vérifier si on doit lancer avec interface graphique
-    launch_gui = "--gui" in sys.argv
-    
-    if launch_gui:
-        try:
-            # Essayer d'importer l'interface graphique
-            from ear_gui import VoiceAssistantGUI
-            
-            # Rediriger stdout pour éviter la console en mode GUI (Windows)
-            if platform.system() == "Windows" and not "--debug" in sys.argv:
-                import ctypes
-                # Cacher la console Windows
-                ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
-            
-            print("=== Lancement avec interface graphique ===")
-            creer_fichiers_exemple()
-            
-            # Démarrer l'application
-            app = AudioCommandRecognizer()
-            
-            # Démarrer l'interface graphique
-            gui = VoiceAssistantGUI(app)
-            gui.run()
-            
-        except ImportError as e:
-            print(f"⚠️ Interface graphique non disponible: {e}")
-            print("Lancement en mode console...")
-            creer_fichiers_exemple()
-            app = AudioCommandRecognizer()
-            app.demarrer()
-    else:
-        # Mode console explicite
-        print("=== Lancement en mode console ===")
-        creer_fichiers_exemple()
+    # Toujours lancer avec l'interface graphique
+    try:
+        from ear_gui import VoiceAssistantGUI
+        
+        # Cacher la console Windows
+        if platform.system() == "Windows":
+            import ctypes
+            ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
+        
+        verifier_fichiers_audio()
+        
+        # Démarrer l'application
         app = AudioCommandRecognizer()
-        app.demarrer()
+        gui = VoiceAssistantGUI(app)
+        gui.run()
+        
+    except ImportError as e:
+        # En cas d'erreur, afficher une boîte de dialogue
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("Erreur", f"Impossible de lancer l'interface graphique:\n{e}")
