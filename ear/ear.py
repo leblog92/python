@@ -124,6 +124,7 @@ class AudioCommandRecognizer:
             "malheureuse": "sounds/malheur.mp3",
             "malheureux": "sounds/malheur.mp3",
             "mal payé": "sounds/pauvres.mp3",
+            "mal payés": "sounds/pauvres.mp3",
             "mario": "sounds/mario.mp3",
             "mars": "sounds/mars.mp3",
             "massacre": "sounds/doom.mp3",
@@ -719,12 +720,18 @@ if __name__ == "__main__":
     os.chdir(script_dir)
     
     # Vérifier si on doit lancer avec interface graphique
-    launch_gui = "--gui" in sys.argv or len(sys.argv) == 1
+    launch_gui = "--gui" in sys.argv
     
     if launch_gui:
         try:
             # Essayer d'importer l'interface graphique
             from ear_gui import VoiceAssistantGUI
+            
+            # Rediriger stdout pour éviter la console en mode GUI (Windows)
+            if platform.system() == "Windows" and not "--debug" in sys.argv:
+                import ctypes
+                # Cacher la console Windows
+                ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
             
             print("=== Lancement avec interface graphique ===")
             creer_fichiers_exemple()
