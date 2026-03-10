@@ -99,7 +99,7 @@ class VoiceAssistantGUI:
         # Main listening button
         self.listen_btn = ttk.Button(
             left_panel,
-            text="▶ Start listening",
+            text="▶ start listening",
             command=self.toggle_listening,
             width=20
         )

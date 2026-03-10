@@ -1,8 +1,11 @@
-"""
-Application Météo - TTS Direct Minimaliste
-"""
+"""Application Météo - TTS Direct Minimaliste"""
 import sys
 import os
+
+# Hide console window on Windows
+if sys.platform == "win32":
+    import ctypes
+    ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
