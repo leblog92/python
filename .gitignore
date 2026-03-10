@@ -10,3 +10,4 @@ ear/__pycache__/
 ear/__pycache__/*.pyc
 ear/__pycache__/ear_gui.cpython-313.pyc
 /ear/__pycache__
+*.pyc
