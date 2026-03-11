@@ -154,6 +154,7 @@ class AudioCommandRecognizer:
             "pas assez payer": "sounds/pauvres.mp3",
             "pas assez payé": "sounds/pauvres.mp3",
             "pas assez payés": "sounds/pauvres.mp3",
+            "pas votre carte": "sounds/nelson.mp3",
             "pauvres": "sounds/pauvres.mp3",
             "pénible": "sounds/penible.mp3",
             "perceval": "sounds/chagrin.mp3",
