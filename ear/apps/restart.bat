@@ -9,6 +9,5 @@ taskkill /f /im pythonw.exe 2>nul
 timeout /t 2 /nobreak >nul
 
 cd /d "%~dp0.."
-echo Démarrage du nouvel assistant...
-python ear.py --gui
+start /B pythonw.exe ear.py --gui >nul 2>&1
 exit

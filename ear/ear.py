@@ -171,6 +171,7 @@ class AudioCommandRecognizer:
             "pleurnicher": "sounds/pleurer.mp3",
             "poilu": "sounds/chewbacca.mp3",
             "pourri": "sounds/pourri.mp3",
+            "planning": "sounds/planning.mp3",
             "pokémon": "sounds/pikachu.mp3",
             "poney": "sounds/poney.mp3",
             "predator": "sounds/predator.mp3",
