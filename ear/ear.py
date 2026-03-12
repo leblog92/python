@@ -71,6 +71,7 @@ class AudioCommandRecognizer:
             "expire": "sounds/expire.mp3",
             "expiré": "sounds/expire.mp3",
             "expirer": "sounds/expire.mp3",
+            "euros": "sounds/combien.mp3",
             "facebook": "sounds/facebook.mp3",
             "faim": "sounds/faim.mp3",
             "fc 24": "sounds/fifa.mp3",
