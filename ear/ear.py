@@ -225,7 +225,8 @@ class AudioCommandRecognizer:
             "windows": "sounds/windows.mp3",
             "xbox": "sounds/xbox.mp3",
             "yoshi": "sounds/yoshi.mp3",
-            "zombie": "sounds/zombie.mp3"
+            "zombie": "sounds/zombie.mp3",
+            "normalement": "sounds/cependant.mp3"
         }
         
         # Dictionnaire des actions système
