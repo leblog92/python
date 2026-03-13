@@ -1,8 +1,8 @@
-# .gitignore
-__pycache__
-ear/__pycache__
+# Python cache
+**/__pycache__/
+**/*.pyc
 ear/meteo/.env.example
 ear/meteo/.env
 ear/meteo/.env.local
 ear/meteo/*.env
-ear/__pycache__/ear_gui.cpython-313.pyc
+
