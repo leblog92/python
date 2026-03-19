@@ -18,12 +18,13 @@ class AudioCommandRecognizer:
         
         # Dictionnaire des commandes et fichiers audio associés
         self.commands = {
+            "aide informatique": "sounds/aide.mp3",
             "anne": "sounds/no.mp3",
-            "alarme": "sounds/alarme.mp3",
+            "achtung": "sounds/alarme.mp3",
             "approximatif": "sounds/oh.mp3",
             "approximative": "sounds/oh.mp3",
             "approximativement": "sounds/oh.mp3",
-            "assistante": "sounds/assistante.mp3",
+            "assistant": "sounds/assistante.mp3",
             "astucieux": "sounds/debile.mp3",
             "attention au matériel": "sounds/pete.mp3",
             "au revoir": "sounds/au_revoir.mp3",
@@ -32,12 +33,15 @@ class AudioCommandRecognizer:
             "bananes": "sounds/banane.mp3",
             "barbara": "sounds/barbara.mp3",
             "basile": "sounds/souffrance.mp3",
+            "bébé": "sounds/chapi.mp3",
             "bière": "sounds/biere.mp3",
             "biscuit": "sounds/biscuit.mp3",
             "biscuits": "sounds/biscuit.mp3",
             "bisou": "sounds/bisou.mp3",
             "bisous": "sounds/bisou.mp3",
+            "bizarre": "sounds/bizarre.mp3",
             "boîte à coucou": "sounds/bac.mp3",
+            "bonjour": "sounds/turret.mp3",
             "bonne année": "sounds/new-year.mp3",
             "bye": "sounds/bye.mp3",
             "calimero": "sounds/calimero.mp3",
@@ -126,7 +130,7 @@ class AudioCommandRecognizer:
             "mal payé": "sounds/pauvres.mp3",
             "mal payés": "sounds/pauvres.mp3",
             "mario": "sounds/mario.mp3",
-            "mars": "sounds/mars.mp3",
+            "mars attack": "sounds/mars.mp3",
             "massacre": "sounds/doom.mp3",
             "mathieu": "sounds/matthieu.mp3",
             "maurice": "sounds/maurice.mp3",
@@ -147,6 +151,7 @@ class AudioCommandRecognizer:
             "nazi": "sounds/hitler.mp3",
             "neige": "sounds/neige.mp3",
             "nintendo": "sounds/nintendo.mp3",
+            "normalement": "sounds/cependant.mp3",
             "nurgle": "sounds/nurgle.mp3",
             "olivier": "sounds/olivier.mp3",
             "papa": "sounds/papa.mp3",
@@ -163,7 +168,6 @@ class AudioCommandRecognizer:
             "périmé": "sounds/perime.mp3",
             "périmée": "sounds/perime.mp3",
             "périmer": "sounds/perime.mp3",
-            "perdu": "sounds/perime.mp3",
             "philippe": "sounds/philippe.mp3",
             "pikachu": "sounds/pikachu.mp3",
             "pilotage": "sounds/pilote.mp3",
@@ -204,6 +208,7 @@ class AudioCommandRecognizer:
             "suffisant": "sounds/suffisant.mp3",
             "super génial": "sounds/super.mp3",
             "switch": "sounds/nintendo.mp3",
+            "trop chaud": "sounds/chaud.mp3",
             "tout est super": "sounds/super.mp3",
             "tout est super génial": "sounds/super.mp3",
             "tu as entendu": "sounds/bonjour.mp3",
@@ -227,8 +232,7 @@ class AudioCommandRecognizer:
             "windows": "sounds/windows.mp3",
             "xbox": "sounds/xbox.mp3",
             "yoshi": "sounds/yoshi.mp3",
-            "zombie": "sounds/zombie.mp3",
-            "normalement": "sounds/cependant.mp3"
+            "zombie": "sounds/zombie.mp3"
         }
         
         # Dictionnaire des actions système
