@@ -9,522 +9,192 @@ import getpass
 from flask import Response, request, jsonify
 import subprocess
 import threading
-import queue
-import tempfile
-from gtts import gTTS
+import pyttsx3
 import pygame
-import uuid
 
 app = flask.Flask(__name__)
 
-# Configuration optimisée pour éviter les erreurs MSMF
+# ─────────────────────────────────────────────
+#  TTS ENGINE (pyttsx3 – moteur Windows SAPI5)
+# ─────────────────────────────────────────────
+tts_lock = threading.Lock()
+
+def speak_text(text: str):
+    """Lit le texte via le moteur TTS Windows (SAPI5) dans un thread dédié."""
+    def _run():
+        with tts_lock:
+            try:
+                engine = pyttsx3.init()
+                engine.setProperty('rate', 160)   # vitesse (mots/min)
+                engine.setProperty('volume', 1.0) # volume max
+                # Choisir une voix française si disponible
+                voices = engine.getProperty('voices')
+                for v in voices:
+                    if 'french' in v.name.lower() or 'fr_' in v.id.lower() or 'hortense' in v.name.lower():
+                        engine.setProperty('voice', v.id)
+                        break
+                engine.say(text)
+                engine.runAndWait()
+                engine.stop()
+            except Exception as e:
+                print(f"Erreur TTS: {e}")
+    threading.Thread(target=_run, daemon=True).start()
+
+# ─────────────────────────────────────────────
+#  AUDIO / MP3 (pygame mixer)
+# ─────────────────────────────────────────────
+pygame.mixer.init()
+MP3_DIR = os.path.join(os.environ.get('USERPROFILE', os.path.expanduser('~')), 'Music', 'jvo_sounds')
+os.makedirs(MP3_DIR, exist_ok=True)
+
+audio_lock = threading.Lock()
+
+def play_mp3_file(path: str):
+    """Joue un fichier MP3/WAV dans un thread dédié."""
+    def _run():
+        with audio_lock:
+            try:
+                pygame.mixer.music.load(path)
+                pygame.mixer.music.play()
+                while pygame.mixer.music.get_busy():
+                    time.sleep(0.1)
+            except Exception as e:
+                print(f"Erreur lecture audio: {e}")
+    threading.Thread(target=_run, daemon=True).start()
+
+# ─────────────────────────────────────────────
+#  CAMÉRA
+# ─────────────────────────────────────────────
 class RobustCamera:
     def __init__(self):
         self.cap = None
-        self.backend = cv2.CAP_DSHOW  # Préférer DSHOW pour Windows
+        self.backend = cv2.CAP_DSHOW
         self.init_camera()
-        
+
     def init_camera(self):
-        """Initialise la caméra avec gestion d'erreurs"""
         if self.cap is not None:
             self.cap.release()
-            time.sleep(1)  # Pause pour la réinitialisation matérielle
-            
+            time.sleep(1)
         try:
             self.cap = cv2.VideoCapture(0, self.backend)
-            
             if not self.cap.isOpened():
                 print("Tentative avec backend par défaut...")
                 self.cap = cv2.VideoCapture(0)
-                
             if not self.cap.isOpened():
                 print("ERREUR: Impossible d'ouvrir la caméra")
                 return False
-            
-            # Configuration minimale pour stabilité
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
             self.cap.set(cv2.CAP_PROP_FPS, 25)
-            
-            # Essayer MJPG, sinon laisser par défaut
             try:
                 self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
             except:
-                print("MJPG non supporté, utilisation du codec par défaut")
-            
-            # Désactiver l'auto-focus pour plus de stabilité
+                pass
             self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
-            
-            # Test de lecture
-            for i in range(5):  # Plusieurs tentatives
+            for _ in range(5):
                 success, frame = self.cap.read()
                 if success and frame is not None:
                     print("✓ Caméra initialisée avec succès")
                     return True
                 time.sleep(0.1)
-                
             print("✗ Caméra ouverte mais ne renvoie pas d'image")
             return False
-            
         except Exception as e:
             print(f"ERREUR initialisation caméra: {e}")
             return False
-    
+
     def read(self):
-        """Lecture robuste avec récupération d'erreurs"""
         if self.cap is None:
             if not self.init_camera():
                 return False, None
-                
         try:
             success, frame = self.cap.read()
-            
             if not success or frame is None:
-                # Tentative de récupération
                 print("Tentative de récupération de la caméra...")
                 self.init_camera()
                 success, frame = self.cap.read() if self.cap else (False, None)
-                
             return success, frame
-            
         except Exception as e:
             print(f"ERREUR lecture: {e}")
             return False, None
 
+
 def get_local_ip():
-    """Obtenir l'adresse IP locale du serveur"""
     try:
-        # Créer une connexion pour déterminer l'IP utilisée pour les connexions externes
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # Ne se connecte pas réellement, prépare juste le socket
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
         return ip
-    except Exception as e:
-        print(f"Erreur lors de la récupération de l'IP: {e}")
+    except:
         return "127.0.0.1"
 
-# File d'attente pour les messages TTS
-tts_queue = queue.Queue()
-pygame.mixer.init()
 
-# Dossier pour les fichiers audio temporaires
-audio_temp_dir = os.path.join(tempfile.gettempdir(), 'jvo_audio')
-os.makedirs(audio_temp_dir, exist_ok=True)
 
-def tts_worker():
-    """Worker thread pour gérer la lecture audio"""
-    while True:
-        try:
-            task = tts_queue.get()
-            if task is None:  # Signal d'arrêt
-                break
-                
-            task_type, data = task
-            
-            if task_type == 'tts':
-                text, lang = data
-                try:
-                    # Générer le TTS
-                    tts = gTTS(text=text, lang=lang, slow=False)
-                    audio_file = os.path.join(audio_temp_dir, f'tts_{uuid.uuid4()}.mp3')
-                    tts.save(audio_file)
-                    
-                    # Lire le fichier audio
-                    pygame.mixer.music.load(audio_file)
-                    pygame.mixer.music.play()
-                    
-                    # Attendre la fin de la lecture
-                    while pygame.mixer.music.get_busy():
-                        time.sleep(0.1)
-                    
-                    # Supprimer le fichier temporaire
-                    try:
-                        os.remove(audio_file)
-                    except:
-                        pass
-                        
-                except Exception as e:
-                    print(f"Erreur TTS: {e}")
-                    
-            elif task_type == 'audio':
-                audio_path = data
-                if os.path.exists(audio_path):
-                    try:
-                        pygame.mixer.music.load(audio_path)
-                        pygame.mixer.music.play()
-                        
-                        while pygame.mixer.music.get_busy():
-                            time.sleep(0.1)
-                    except Exception as e:
-                        print(f"Erreur lecture audio: {e}")
-                else:
-                    print(f"Fichier audio non trouvé: {audio_path}")
-                    
-        except Exception as e:
-            print(f"Erreur dans le worker audio: {e}")
-        finally:
-            tts_queue.task_done()
+def save_html_file():
+    """
+    Génère un fichier cam.html qui redirige simplement vers http://IP:5000.
+    Ainsi, depuis n'importe quel poste du LAN, ouvrir cam.html ouvre
+    l'interface complète servie par Flask — sans problème de sécurité file://.
+    """
+    ip_address = get_local_ip()
+    print(f"Adresse IP détectée: {ip_address}")
+    server_url = f"http://{ip_address}:5000"
 
-# Démarrer le worker TTS
-tts_thread = threading.Thread(target=tts_worker, daemon=True)
-tts_thread.start()
-
-def generate_html_file(ip_address):
-    """Génère le fichier HTML avec l'adresse IP correcte et les contrôles audio"""
+    # Fichier de redirection simple — pas de ressources locales
     html_content = f'''<!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/png" href="https://upload.wikimedia.org/wikipedia/commons/b/b4/Blue_eye_icon.png"/>
-    <title>Flux Salle JVO - Contrôle Audio</title>
-    <style>
-        * {{
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }}
-        body {{
-            background-color: #000;
-            color: #fff;
-            font-family: Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            padding: 20px;
-        }}
-        .container {{
-            text-align: center;
-            max-width: 100%;
-            width: 1000px;
-        }}
-        .video-container {{
-            position: relative;
-            display: inline-block;
-            margin-bottom: 30px;
-        }}
-        
-        img {{
-            max-width: 100%;
-            height: auto;
-            border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(255, 255, 255, 0.1);
-        }}
-
-        .audio-controls {{
-            background-color: #1a1a1a;
-            padding: 20px;
-            border-radius: 10px;
-            margin-top: 20px;
-            width: 100%;
-        }}
-        
-        .control-group {{
-            margin-bottom: 15px;
-        }}
-        
-        label {{
-            display: block;
-            margin-bottom: 5px;
-            color: #4CAF50;
-            font-weight: bold;
-        }}
-        
-        input[type="text"], select {{
-            width: 100%;
-            padding: 10px;
-            border: 2px solid #333;
-            border-radius: 5px;
-            background-color: #222;
-            color: white;
-            font-size: 16px;
-        }}
-        
-        button {{
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
-            font-size: 16px;
-            margin: 10px 5px;
-            cursor: pointer;
-            border-radius: 5px;
-            transition: background-color 0.3s;
-            font-weight: bold;
-        }}
-        
-        button:hover {{
-            background-color: #45a049;
-        }}
-        
-        button:active {{
-            background-color: #3d8b40;
-        }}
-        
-        .danger {{
-            background-color: #f44336;
-        }}
-        
-        .danger:hover {{
-            background-color: #da190b;
-        }}
-        
-        .warning {{
-            background-color: #ff9800;
-        }}
-        
-        .warning:hover {{
-            background-color: #e68900;
-        }}
-        
-        .status {{
-            margin-top: 15px;
-            padding: 10px;
-            border-radius: 5px;
-            display: none;
-        }}
-        
-        .success {{
-            background-color: #4CAF50;
-            color: white;
-        }}
-        
-        .error {{
-            background-color: #f44336;
-            color: white;
-        }}
-        
-        h2 {{
-            color: #4CAF50;
-            margin-bottom: 20px;
-            border-bottom: 2px solid #4CAF50;
-            padding-bottom: 10px;
-        }}
-        
-        .ip-display {{
-            background-color: #333;
-            padding: 10px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            font-family: monospace;
-        }}
-    </style>
+  <meta charset="UTF-8">
+  <meta http-equiv="refresh" content="0; url={server_url}">
+  <title>Redirection Salle JVO…</title>
 </head>
 <body>
-    <div class="container">
-        <h1>🎥 Surveillance Salle JVO</h1>
-        <div class="ip-display">
-            📍 Adresse du serveur : http://{ip_address}:5000
-        </div>
-        
-        <div class="video-container">
-            <img id="videoFeed" src="http://{ip_address}:5000/video_feed" width="960" height="540" alt="Flux vidéo">
-        </div>
-        
-        <div class="audio-controls">
-            <h2>Contrôles à Distance</h2>
-            
-            <div class="control-group">
-                <label for="ttsText">Message TTS (Text-to-Speech) :</label>
-                <input type="text" id="ttsText" placeholder="Message à prononcer" value="Bienvenue dans la salle jeux vidéo. Un membre du personnel va vous accueillir dans un instant.">
-            </div>
-            
-            <div class="control-group">
-                <label for="ttsLang">Langue :</label>
-                <select id="ttsLang">
-                    <option value="fr">Français</option>
-                    <option value="en">English</option>
-                    <option value="es">Español</option>
-                    <option value="de">Deutsch</option>
-                </select>
-            </div>
-            
-            <div>
-                <button id="playTTS">▶️ Lire le message</button>
-                <button id="playAlert" class="warning">🚨 Alerte de sécurité</button>
-                <button id="playDoorbell" class="warning">🔔 Sonnette</button>
-                <button id="stopAudio" class="danger">⏹️ Arrêter l'audio</button>
-            </div>
-            
-            <div id="status" class="status"></div>
-        </div>
-    </div>
-    
-    <script>
-        function showStatus(message, isError = false) {{
-            const statusDiv = document.getElementById('status');
-            statusDiv.textContent = message;
-            statusDiv.className = 'status ' + (isError ? 'error' : 'success');
-            statusDiv.style.display = 'block';
-            
-            setTimeout(() => {{
-                statusDiv.style.display = 'none';
-            }}, 3000);
-        }}
-        
-        async function sendAudioCommand(endpoint, data = {{}}) {{
-            try {{
-                const response = await fetch(`http://{ip_address}:5000/${{endpoint}}`, {{
-                    method: 'POST',
-                    headers: {{
-                        'Content-Type': 'application/json',
-                    }},
-                    body: JSON.stringify(data)
-                }});
-                
-                const result = await response.json();
-                
-                if (response.ok) {{
-                    showStatus(result.message || 'Commande envoyée avec succès !');
-                }} else {{
-                    showStatus(result.error || 'Erreur lors de la commande', true);
-                }}
-            }} catch (error) {{
-                showStatus('Erreur de connexion au serveur', true);
-                console.error('Erreur:', error);
-            }}
-        }}
-        
-        // Événements des boutons
-        document.getElementById('playTTS').addEventListener('click', () => {{
-            const text = document.getElementById('ttsText').value;
-            const lang = document.getElementById('ttsLang').value;
-            
-            if (text.trim() === '') {{
-                showStatus('Veuillez entrer un message', true);
-                return;
-            }}
-            
-            sendAudioCommand('play_tts', {{ text: text, lang: lang }});
-        }});
-        
-        document.getElementById('playAlert').addEventListener('click', () => {{
-            sendAudioCommand('play_sound', {{ sound: 'alert' }});
-        }});
-        
-        document.getElementById('playDoorbell').addEventListener('click', () => {{
-            sendAudioCommand('play_sound', {{ sound: 'doorbell' }});
-        }});
-        
-        document.getElementById('stopAudio').addEventListener('click', () => {{
-            sendAudioCommand('stop_audio');
-        }});
-        
-        // Touche Entrée pour envoyer le TTS
-        document.getElementById('ttsText').addEventListener('keypress', (e) => {{
-            if (e.key === 'Enter') {{
-                document.getElementById('playTTS').click();
-            }}
-        }});
-        
-        // Rechargement automatique de la vidéo en cas d'erreur
-        document.getElementById('videoFeed').onerror = function() {{
-            this.src = `http://{ip_address}:5000/video_feed?t=${{new Date().getTime()}}`;
-        }};
-        
-        // Rechargement périodique pour maintenir la connexion
-        setInterval(() => {{
-            const img = document.getElementById('videoFeed');
-            img.src = img.src.split('?')[0] + '?t=' + new Date().getTime();
-        }}, 30000);
-    </script>
+  <p>Redirection vers <a href="{server_url}">{server_url}</a>…</p>
+  <script>window.location.replace("{server_url}");</script>
 </body>
 </html>'''
-    
-    return html_content
 
-def save_html_file():
-    """Sauvegarde le fichier HTML à l'emplacement spécifié"""
+    # Essayer d'écrire sur le lecteur réseau, sinon en local
+    destination_path = r"L:\Groups\mediatheque\06- SECTEUR INFORMATIQUE\7- SALLE JVO"
+    if not os.path.exists(destination_path):
+        print(f"Chemin réseau inaccessible, sauvegarde locale.")
+        destination_path = "."
+
+    html_file_path = os.path.join(destination_path, "cam.html")
     try:
-        # Chemin de destination
-        destination_path = r"L:\Groups\mediatheque\06- SECTEUR INFORMATIQUE\7- SALLE JVO"
-        
-        # Vérifier si le chemin existe
-        if not os.path.exists(destination_path):
-            print(f"Le chemin n'existe pas: {destination_path}")
-            print("Création du chemin...")
-            try:
-                os.makedirs(destination_path, exist_ok=True)
-                print(f"Chemin créé: {destination_path}")
-            except Exception as e:
-                print(f"Impossible de créer le chemin: {e}")
-                # Essayer de sauvegarder dans le répertoire courant
-                destination_path = "."
-        
-        # Obtenir l'adresse IP
-        ip_address = get_local_ip()
-        print(f"Adresse IP détectée: {ip_address}")
-        
-        # Générer le contenu HTML
-        html_content = generate_html_file(ip_address)
-        
-        # Chemin complet du fichier
-        html_file_path = os.path.join(destination_path, "cam.html")
-        
-        # Sauvegarder le fichier
         with open(html_file_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
-        
-        print(f"Fichier HTML généré avec succès: {html_file_path}")
-        print(f"URL du flux: http://{ip_address}:5000/video_feed")
-        
-        # Essayer d'ouvrir le fichier HTML
-        try:
-            subprocess.Popen(f'explorer "{html_file_path}"', shell=True)
-            print("Fichier HTML ouvert dans le navigateur par défaut")
-        except:
-            print(f"Fichier disponible à: {html_file_path}")
-            
+        print(f"Fichier cam.html généré : {html_file_path}")
     except Exception as e:
-        print(f"Erreur lors de la génération du fichier HTML: {e}")
-        # Essayer de sauvegarder dans le répertoire courant en cas d'erreur
-        try:
-            ip_address = get_local_ip()
-            html_content = generate_html_file(ip_address)
-            with open("flux_jvo_local.html", 'w', encoding='utf-8') as f:
-                f.write(html_content)
-            print("Fichier HTML sauvegardé localement: flux_jvo_local.html")
-        except Exception as e2:
-            print(f"Échec de la sauvegarde locale: {e2}")
+        print(f"Impossible d'écrire cam.html : {e}")
 
-# Initialisation
+    # Ouvrir directement l'interface Flask dans le navigateur
+    try:
+        subprocess.Popen(f'start "" "{server_url}"', shell=True)
+        print(f"Navigateur ouvert sur {server_url}")
+    except Exception as e:
+        print(f"Impossible d'ouvrir le navigateur : {e}")
+
+
+# ─────────────────────────────────────────────
+#  INITIALISATION
+# ─────────────────────────────────────────────
 camera = RobustCamera()
-
-# Variables pour la détection de mouvement
 motion_detected = False
 last_frame = None
 motion_threshold = 500
 capture_count = 0
 MAX_CAPTURES = 100
 
-# Définir le dossier des captures dans %USERPROFILE%\Pictures\motion_captures
 user_profile = os.environ.get('USERPROFILE', os.path.expanduser('~'))
 motion_captures_dir = os.path.join(user_profile, 'Pictures', 'motion_captures')
+os.makedirs(motion_captures_dir, exist_ok=True)
 
-# Créer le dossier s'il n'existe pas
-if not os.path.exists(motion_captures_dir):
-    os.makedirs(motion_captures_dir, exist_ok=True)
-    print(f"Dossier créé: {motion_captures_dir}")
-
-# Chemins des sons prédéfinis (à créer manuellement ou à télécharger)
-sound_files = {
-    'alert': 'alert.wav',  # À créer dans le même dossier que le script
-    'doorbell': 'doorbell.wav'  # À créer dans le même dossier que le script
-}
 
 def save_capture(frame):
-    """Sauvegarde une capture d'écran dans %USERPROFILE%\Pictures\motion_captures"""
     global capture_count
-    
     if capture_count >= MAX_CAPTURES:
-        # Nettoyer les anciennes captures
         try:
             files = sorted(os.listdir(motion_captures_dir))
             if len(files) > MAX_CAPTURES:
@@ -532,248 +202,519 @@ def save_capture(frame):
                     os.remove(os.path.join(motion_captures_dir, old_file))
                 capture_count = MAX_CAPTURES
         except Exception as e:
-            print(f"Erreur lors du nettoyage des anciennes captures: {e}")
-    
+            print(f"Erreur nettoyage: {e}")
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     filename = f"motion_{timestamp}.jpg"
     file_path = os.path.join(motion_captures_dir, filename)
-    
     try:
-        # Sauvegarde en JPG avec qualité optimisée
         cv2.imwrite(file_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
         capture_count += 1
-        print(f"Capture sauvegardée: {file_path}")
+        print(f"Capture: {file_path}")
         return file_path
     except Exception as e:
-        print(f"Erreur lors de la sauvegarde de la capture: {e}")
+        print(f"Erreur capture: {e}")
         return None
 
+
 def detect_motion(current_frame):
-    """Détecte les mouvements dans l'image"""
     global last_frame, motion_detected
-    
     if current_frame is None:
         return False, None
-        
-    # Réduction pour performance
     resized_frame = cv2.resize(current_frame, (640, 360))
     gray = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (21, 21), 0)
-    
     if last_frame is None:
         last_frame = gray
         return False, current_frame
-    
     frame_diff = cv2.absdiff(last_frame, gray)
     thresh = cv2.threshold(frame_diff, 25, 255, cv2.THRESH_BINARY)[1]
     thresh = cv2.dilate(thresh, None, iterations=2)
-    
     contours, _ = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
     motion_detected = False
     output_frame = current_frame.copy()
-    
     for contour in contours:
         if cv2.contourArea(contour) > motion_threshold:
             motion_detected = True
             (x, y, w, h) = cv2.boundingRect(contour)
             x, y, w, h = x*2, y*2, w*2, h*2
             cv2.rectangle(output_frame, (x, y), (x + w, y + h), (0, 255, 0), 3)
-            cv2.putText(output_frame, "MOTION DETECTED", (10, 50), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 3)
-    
+            cv2.putText(output_frame, "MOTION DETECTED", (10, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 3)
     last_frame = gray
     return motion_detected, output_frame
 
+
 def generate_frames():
-    """Génère le flux vidéo pour le streaming"""
     global motion_detected
     motion_cooldown = 0
     frame_count = 0
-    
     while True:
         success, frame = camera.read()
-        
         if not success or frame is None:
-            # Image de remplacement en cas d'erreur
             frame = np.zeros((480, 640, 3), dtype=np.uint8)
-            cv2.putText(frame, "CAMERA ERROR - RECONNECTION...", (50, 240), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            cv2.putText(frame, "CAMERA ERROR - RECONNECTION...", (50, 240),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
         else:
-            # Traitement normal
             frame_count += 1
-            if frame_count % 2 == 0:  # Traiter 1 frame sur 2
+            if frame_count % 2 == 0:
                 motion_detected, frame = detect_motion(frame)
-                
                 if motion_detected and motion_cooldown == 0:
                     save_capture(frame)
                     motion_cooldown = 15
-                
             if motion_cooldown > 0:
                 motion_cooldown -= 1
-        
-        # Encodage pour streaming
         stream_frame = cv2.resize(frame, (960, 540))
         ret, buffer = cv2.imencode('.jpg', stream_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        
         if ret:
-            frame_bytes = buffer.tobytes()
             yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
         else:
-            # Frame d'erreur
             error_frame = np.zeros((540, 960, 3), dtype=np.uint8)
-            cv2.putText(error_frame, "ENCODING ERROR", (300, 270), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-            ret, buffer = cv2.imencode('.jpg', error_frame)
-            frame_bytes = buffer.tobytes()
+            cv2.putText(error_frame, "ENCODING ERROR", (300, 270),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            _, buffer = cv2.imencode('.jpg', error_frame)
             yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
 
-# Routes Flask
+
+# ─────────────────────────────────────────────
+#  ROUTES FLASK
+# ─────────────────────────────────────────────
+
 @app.route('/video_feed')
 def video_feed():
-    return Response(generate_frames(),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-@app.route('/')
-def index():
-    return '''
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Flux Vidéo</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background-color: black;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            overflow: hidden;
-        }
-        
-        #videoStream {
-            max-width: 100%;
-            max-height: 100%;
-            object-fit: contain;
-        }
-    </style>
-</head>
-<body>
-    <img id="videoStream" src="/video_feed" alt="Flux vidéo en direct">
-    
-    <script>
-        // Rechargement automatique en cas d'erreur
-        document.getElementById('videoStream').onerror = function() {{
-            this.src = '/video_feed?t=' + new Date().getTime();
-        }};
-        
-        // Rechargement périodique pour maintenir la connexion
-        setInterval(function() {{
-            var img = document.getElementById('videoStream');
-            var currentSrc = img.src;
-            img.src = currentSrc.split('?')[0] + '?t=' + new Date().getTime();
-        }}, 30000); // Toutes les 30 secondes
-    </script>
-</body>
-</html>
-'''
 
-# Routes pour le contrôle audio
-@app.route('/play_tts', methods=['POST'])
-def play_tts():
-    """Joue un texte en TTS"""
+# ── TTS ──────────────────────────────────────
+@app.route('/tts', methods=['POST'])
+def tts():
+    """
+    POST JSON : {"text": "Bonjour la salle !"}
+    Déclenche la lecture TTS sur la machine caméra.
+    """
+    data = request.get_json(silent=True) or {}
+    text = data.get('text', '').strip()
+    if not text:
+        return jsonify({"status": "error", "message": "Champ 'text' manquant ou vide"}), 400
+    print(f"[TTS] ← {text}")
+    speak_text(text)
+    return jsonify({"status": "ok", "text": text})
+
+
+# ── MP3 : upload ─────────────────────────────
+@app.route('/upload_mp3', methods=['POST'])
+def upload_mp3():
+    """
+    Reçoit un fichier audio (MP3/WAV) et le sauvegarde dans MP3_DIR.
+    Form-data : champ 'file'
+    """
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "Aucun fichier envoyé"}), 400
+    f = request.files['file']
+    if f.filename == '':
+        return jsonify({"status": "error", "message": "Nom de fichier vide"}), 400
+    # Sécuriser le nom de fichier
+    safe_name = os.path.basename(f.filename).replace(' ', '_')
+    dest = os.path.join(MP3_DIR, safe_name)
+    f.save(dest)
+    print(f"[AUDIO] Fichier uploadé: {dest}")
+    return jsonify({"status": "ok", "filename": safe_name})
+
+
+# ── MP3 : liste ──────────────────────────────
+@app.route('/list_mp3')
+def list_mp3():
+    """Retourne la liste des fichiers audio disponibles."""
     try:
-        data = request.get_json()
-        text = data.get('text', '')
-        lang = data.get('lang', 'fr')
-        
-        if not text:
-            return jsonify({'error': 'Aucun texte fourni'}), 400
-        
-        print(f"TTS demandé: '{text}' en {lang}")
-        tts_queue.put(('tts', (text, lang)))
-        
-        return jsonify({'message': f'Message TTS envoyé: "{text}"'})
-        
+        files = [f for f in os.listdir(MP3_DIR)
+                 if f.lower().endswith(('.mp3', '.wav', '.ogg'))]
+        files.sort()
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({"status": "ok", "files": files})
 
-@app.route('/play_sound', methods=['POST'])
-def play_sound():
-    """Joue un son prédéfini"""
-    try:
-        data = request.get_json()
-        sound_type = data.get('sound', 'alert')
-        
-        # Chemin du son (peut être modifié selon vos besoins)
-        if sound_type == 'alert':
-            sound_path = os.path.join(os.path.dirname(__file__), 'alert.wav')
-        elif sound_type == 'doorbell':
-            sound_path = os.path.join(os.path.dirname(__file__), 'doorbell.wav')
-        else:
-            return jsonify({'error': 'Type de son non reconnu'}), 400
-        
-        print(f"Son demandé: {sound_type}")
-        
-        # Vérifier si le fichier existe
-        if os.path.exists(sound_path):
-            tts_queue.put(('audio', sound_path))
-            return jsonify({'message': f'Son {sound_type} envoyé'})
-        else:
-            # Fallback vers un TTS si le fichier n'existe pas
-            if sound_type == 'alert':
-                fallback_text = "Attention! Alerte de sécurité!"
-            elif sound_type == 'doorbell':
-                fallback_text = "Ding dong! Quelqu'un à la porte!"
-            else:
-                fallback_text = "Notification sonore"
-            
-            tts_queue.put(('tts', (fallback_text, 'fr')))
-            return jsonify({'message': f'Son {sound_type} (TTS fallback) envoyé'})
-            
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
+# ── MP3 : lecture ─────────────────────────────
+@app.route('/play_mp3', methods=['POST'])
+def play_mp3():
+    """
+    POST JSON : {"filename": "alerte.mp3"}
+    Joue le fichier sur la machine caméra.
+    """
+    data = request.get_json(silent=True) or {}
+    filename = data.get('filename', '').strip()
+    if not filename:
+        return jsonify({"status": "error", "message": "Champ 'filename' manquant"}), 400
+    path = os.path.join(MP3_DIR, os.path.basename(filename))
+    if not os.path.exists(path):
+        return jsonify({"status": "error", "message": f"Fichier introuvable: {filename}"}), 404
+    print(f"[AUDIO] ← lecture {filename}")
+    play_mp3_file(path)
+    return jsonify({"status": "ok", "filename": filename})
+
+
+# ── MP3 : stop ────────────────────────────────
 @app.route('/stop_audio', methods=['POST'])
 def stop_audio():
-    """Arrête la lecture audio en cours"""
+    """Arrête la lecture audio en cours."""
     try:
         pygame.mixer.music.stop()
-        print("Audio arrêté")
-        return jsonify({'message': 'Audio arrêté avec succès'})
+        print("[AUDIO] Lecture arrêtée")
+        return jsonify({"status": "ok"})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
+
+# ── Interface de contrôle principale ──────────
+@app.route('/')
+def index():
+    ip = get_local_ip()
+    return f'''<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Salle JVO – Contrôle</title>
+<style>
+  :root {{
+    --bg: #0d0d0d;
+    --surface: #1a1a1a;
+    --border: #2e2e2e;
+    --accent: #4f8ef7;
+    --accent2: #3ecf8e;
+    --red: #e35b5b;
+    --text: #e8e8e8;
+    --muted: #888;
+  }}
+  * {{ margin:0; padding:0; box-sizing:border-box; }}
+  body {{ background:var(--bg); color:var(--text); font-family:'Segoe UI',Arial,sans-serif; min-height:100vh; }}
+
+  header {{
+    background:var(--surface);
+    border-bottom:1px solid var(--border);
+    padding:14px 28px;
+    display:flex; align-items:center; gap:12px;
+  }}
+  header h1 {{ font-size:1.1rem; font-weight:600; letter-spacing:.05em; }}
+  .dot {{ width:9px; height:9px; border-radius:50%; background:var(--accent2); box-shadow:0 0 6px var(--accent2); animation:pulse 2s infinite; }}
+  @keyframes pulse {{ 0%,100%{{opacity:1}} 50%{{opacity:.4}} }}
+
+  .layout {{
+    display:grid;
+    grid-template-columns: 1fr 380px;
+    gap:0;
+    height:calc(100vh - 57px);
+  }}
+
+  /* ── Vidéo ── */
+  .video-panel {{
+    background:#000;
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
+  }}
+  .video-panel img {{ width:100%; height:100%; object-fit:contain; }}
+
+  /* ── Panneau de contrôle ── */
+  .ctrl-panel {{
+    background:var(--surface);
+    border-left:1px solid var(--border);
+    padding:20px;
+    display:flex; flex-direction:column; gap:20px;
+    overflow-y:auto;
+  }}
+
+  .card {{
+    background:var(--bg);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:16px;
+  }}
+  .card h2 {{
+    font-size:.8rem; text-transform:uppercase; letter-spacing:.1em;
+    color:var(--muted); margin-bottom:12px; display:flex; align-items:center; gap:6px;
+  }}
+  .card h2 svg {{ flex-shrink:0; }}
+
+  textarea, input[type=text] {{
+    width:100%; background:#111; border:1px solid var(--border); border-radius:6px;
+    color:var(--text); padding:10px; font-size:.9rem; resize:vertical;
+    outline:none; transition:border .2s;
+  }}
+  textarea:focus, input[type=text]:focus {{ border-color:var(--accent); }}
+
+  .btn {{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    padding:9px 16px; border:none; border-radius:6px; font-size:.88rem;
+    cursor:pointer; font-weight:600; transition:opacity .15s, transform .1s;
+    white-space:nowrap;
+  }}
+  .btn:active {{ transform:scale(.97); }}
+  .btn:disabled {{ opacity:.4; cursor:not-allowed; }}
+  .btn-primary {{ background:var(--accent); color:#fff; }}
+  .btn-success {{ background:var(--accent2); color:#000; }}
+  .btn-danger  {{ background:var(--red); color:#fff; }}
+  .btn-ghost   {{ background:var(--border); color:var(--text); }}
+  .btn-row {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }}
+
+  /* ── Phrases rapides ── */
+  .quick-btns {{ display:flex; flex-direction:column; gap:6px; }}
+  .quick-btn {{
+    background:#111; border:1px solid var(--border); border-radius:6px;
+    color:var(--text); padding:8px 12px; font-size:.82rem; cursor:pointer;
+    text-align:left; transition:border .2s, background .2s;
+  }}
+  .quick-btn:hover {{ border-color:var(--accent); background:#1a1a2e; }}
+
+  /* ── Liste MP3 ── */
+  #mp3List {{ list-style:none; display:flex; flex-direction:column; gap:6px; max-height:180px; overflow-y:auto; }}
+  #mp3List li {{
+    display:flex; align-items:center; justify-content:space-between;
+    background:#111; border:1px solid var(--border); border-radius:6px; padding:8px 10px;
+    font-size:.83rem;
+  }}
+  #mp3List li button {{ font-size:.78rem; padding:4px 10px; }}
+
+  /* ── Upload ── */
+  .upload-area {{
+    border:2px dashed var(--border); border-radius:8px; padding:16px;
+    text-align:center; cursor:pointer; font-size:.83rem; color:var(--muted);
+    transition:border .2s;
+  }}
+  .upload-area:hover {{ border-color:var(--accent); color:var(--text); }}
+  input[type=file] {{ display:none; }}
+
+  /* ── Toast ── */
+  #toast {{
+    position:fixed; bottom:20px; right:20px; z-index:999;
+    background:#222; border:1px solid var(--border); border-radius:8px;
+    padding:10px 18px; font-size:.85rem; opacity:0; pointer-events:none;
+    transition:opacity .3s; max-width:280px;
+  }}
+  #toast.show {{ opacity:1; }}
+  #toast.ok {{ border-color:var(--accent2); color:var(--accent2); }}
+  #toast.err {{ border-color:var(--red); color:var(--red); }}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="dot"></div>
+  <h1>SALLE JVO – Surveillance &amp; Diffusion</h1>
+</header>
+
+<div class="layout">
+  <!-- Flux vidéo -->
+  <div class="video-panel">
+    <img id="videoFeed" src="/video_feed" alt="Flux vidéo">
+  </div>
+
+  <!-- Panneau de contrôle -->
+  <div class="ctrl-panel">
+
+    <!-- TTS -->
+    <div class="card">
+      <h2>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+        Synthèse vocale (TTS)
+      </h2>
+      <textarea id="ttsText" rows="3" placeholder="Tapez votre message ici…"></textarea>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="sendTTS()">▶ Lire</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('ttsText').value=''">Effacer</button>
+      </div>
+    </div>
+
+    <!-- Phrases rapides -->
+    <div class="card">
+      <h2>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Phrases rapides
+      </h2>
+      <div class="quick-btns" id="quickBtns"></div>
+    </div>
+
+    <!-- Upload MP3 -->
+    <div class="card">
+      <h2>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Ajouter un fichier audio
+      </h2>
+      <label class="upload-area" for="mp3Input" id="dropZone">
+        📂 Cliquez ou déposez un fichier MP3 / WAV ici
+      </label>
+      <input type="file" id="mp3Input" accept=".mp3,.wav,.ogg" onchange="uploadMP3(this.files[0])">
+    </div>
+
+    <!-- Lecteur MP3 -->
+    <div class="card">
+      <h2>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+        Fichiers audio
+      </h2>
+      <ul id="mp3List"><li style="color:var(--muted);font-size:.82rem">Chargement…</li></ul>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-danger" onclick="stopAudio()">■ Stop</button>
+        <button class="btn btn-ghost" onclick="loadMP3List()">↺ Actualiser</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const SERVER = 'http://{ip}:5000';
+
+// ── Flux vidéo ──────────────────────────────
+const feed = document.getElementById('videoFeed');
+feed.onerror = () => {{ feed.src = SERVER + '/video_feed?t=' + Date.now(); }};
+setInterval(() => {{
+  feed.src = SERVER + '/video_feed?t=' + Date.now();
+}}, 30000);
+
+// ── Toast ────────────────────────────────────
+function toast(msg, type='ok') {{
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + type;
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.className = '', 3000);
+}}
+
+// ── TTS ──────────────────────────────────────
+async function sendTTS() {{
+  const text = document.getElementById('ttsText').value.trim();
+  if (!text) {{ toast('Aucun texte saisi', 'err'); return; }}
+  try {{
+    const r = await fetch(SERVER + '/tts', {{
+      method:'POST',
+      headers:{{'Content-Type':'application/json'}},
+      body: JSON.stringify({{text}})
+    }});
+    const d = await r.json();
+    if (d.status === 'ok') toast('✓ Message envoyé à la salle');
+    else toast('Erreur: ' + d.message, 'err');
+  }} catch(e) {{ toast('Connexion impossible', 'err'); }}
+}}
+
+// Envoi avec Ctrl+Entrée
+document.getElementById('ttsText').addEventListener('keydown', e => {{
+  if (e.ctrlKey && e.key === 'Enter') sendTTS();
+}});
+
+// ── Phrases rapides ──────────────────────────
+const QUICK_PHRASES = [
+  'Attention, merci de faire silence.',
+  'La séance va commencer dans quelques instants.',
+  'Merci de vous installer en salle.',
+  'Fin de la session, merci pour votre participation.',
+  'Une pause de cinq minutes est accordée.',
+];
+function buildQuickBtns() {{
+  const c = document.getElementById('quickBtns');
+  QUICK_PHRASES.forEach(p => {{
+    const b = document.createElement('button');
+    b.className = 'quick-btn';
+    b.textContent = '🔊 ' + p;
+    b.onclick = () => {{
+      document.getElementById('ttsText').value = p;
+      sendTTS();
+    }};
+    c.appendChild(b);
+  }});
+}}
+buildQuickBtns();
+
+// ── Upload MP3 ────────────────────────────────
+async function uploadMP3(file) {{
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  toast('Envoi de ' + file.name + '…');
+  try {{
+    const r = await fetch(SERVER + '/upload_mp3', {{ method:'POST', body:fd }});
+    const d = await r.json();
+    if (d.status === 'ok') {{ toast('✓ ' + d.filename + ' uploadé'); loadMP3List(); }}
+    else toast('Erreur upload: ' + d.message, 'err');
+  }} catch(e) {{ toast('Connexion impossible', 'err'); }}
+}}
+
+// ── Drag & drop ───────────────────────────────
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => {{ e.preventDefault(); dz.style.borderColor='var(--accent)'; }});
+dz.addEventListener('dragleave', () => {{ dz.style.borderColor=''; }});
+dz.addEventListener('drop', e => {{
+  e.preventDefault(); dz.style.borderColor='';
+  const f = e.dataTransfer.files[0];
+  if (f) uploadMP3(f);
+}});
+
+// ── Liste MP3 ─────────────────────────────────
+async function loadMP3List() {{
+  try {{
+    const r = await fetch(SERVER + '/list_mp3');
+    const d = await r.json();
+    const ul = document.getElementById('mp3List');
+    ul.innerHTML = '';
+    if (!d.files || d.files.length === 0) {{
+      ul.innerHTML = '<li style="color:var(--muted);font-size:.82rem">Aucun fichier audio disponible</li>';
+      return;
+    }}
+    d.files.forEach(f => {{
+      const li = document.createElement('li');
+      li.innerHTML = `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px" title="${{f}}">${{f}}</span>
+        <button class="btn btn-success" onclick="playMP3('${{f}}')">▶ Jouer</button>`;
+      ul.appendChild(li);
+    }});
+  }} catch(e) {{ console.error(e); }}
+}}
+
+async function playMP3(filename) {{
+  try {{
+    const r = await fetch(SERVER + '/play_mp3', {{
+      method:'POST',
+      headers:{{'Content-Type':'application/json'}},
+      body: JSON.stringify({{filename}})
+    }});
+    const d = await r.json();
+    if (d.status === 'ok') toast('▶ Lecture: ' + filename);
+    else toast('Erreur: ' + d.message, 'err');
+  }} catch(e) {{ toast('Connexion impossible', 'err'); }}
+}}
+
+async function stopAudio() {{
+  try {{
+    await fetch(SERVER + '/stop_audio', {{method:'POST'}});
+    toast('■ Audio arrêté');
+  }} catch(e) {{ toast('Connexion impossible', 'err'); }}
+}}
+
+// Chargement initial
+loadMP3List();
+</script>
+</body>
+</html>'''
+
+
+# ─────────────────────────────────────────────
+#  MAIN
+# ─────────────────────────────────────────────
 if __name__ == '__main__':
-    print("=== LOGITECH C270 - SURVEILLANCE HD AVEC GESTION D'ERREURS ===")
+    print("=== LOGITECH C270 - SURVEILLANCE HD ===")
     print("Démarrage du serveur...")
-    
-    # Générer et sauvegarder le fichier HTML
     save_html_file()
-    
-    # Obtenir l'adresse IP pour l'affichage
     ip_address = get_local_ip()
-    
-    print(f"Accédez à http://{ip_address}:5000")
-    print("Résolution: 1280x720 HD")
-    print("Backend: DSHOW (Windows)")
-    print(f"Dossier des captures: {motion_captures_dir}")
-    print("Détection de mouvement: Active")
-    print("Captures automatiques: Activées")
-    print("Contrôle à distance: Activé")
-    print("\nFonctionnalités audio disponibles:")
-    print("  - TTS (Text-to-Speech) avec choix de langue")
-    print("  - Alerte de sécurité")
-    print("  - Sonnette")
-    print("  - Arrêt audio")
-    print("\nNote: Pour les sons personnalisés, placez les fichiers .wav dans le même dossier que le script:")
-    print("  - alert.wav (pour l'alerte)")
-    print("  - doorbell.wav (pour la sonnette)")
-    print("\nFichier HTML disponible à:")
-    print(r"L:\Groups\mediatheque\06- SECTEUR INFORMATIQUE\7- SALLE JVO\cam.html")
-    
+    print(f"\n  Interface de contrôle : http://{ip_address}:5000")
+    print(f"  Flux vidéo seul       : http://{ip_address}:5000/video_feed")
+    print(f"  Dossier captures      : {motion_captures_dir}")
+    print(f"  Dossier MP3           : {MP3_DIR}")
+    print("\n  Endpoints disponibles :")
+    print("    POST /tts           → {{\"text\": \"...\"}}        – Lecture TTS")
+    print("    POST /upload_mp3    → form-data 'file'         – Upload audio")
+    print("    GET  /list_mp3                                 – Liste des fichiers")
+    print("    POST /play_mp3      → {{\"filename\": \"...\"}}     – Jouer un fichier")
+    print("    POST /stop_audio                               – Arrêter la lecture")
+    print()
     app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
