@@ -541,7 +541,7 @@ def index():
         Ajouter un fichier audio
       </h2>
       <label class="upload-area" for="mp3Input" id="dropZone">
-        📂 Cliquez ou déposez un fichier MP3 / WAV ici
+        📂 Cliquez ou déposez MP3 / WAV
       </label>
       <input type="file" id="mp3Input" accept=".mp3,.wav,.ogg" onchange="uploadMP3(this.files[0])">
     </div>
@@ -606,11 +606,11 @@ document.getElementById('ttsText').addEventListener('keydown', e => {{
 
 // ── Phrases rapides ──────────────────────────
 const QUICK_PHRASES = [
-  'Attention, merci de faire silence.',
-  'La séance va commencer dans quelques instants.',
-  'Merci de vous installer en salle.',
-  'Fin de la session, merci pour votre participation.',
-  'Une pause de cinq minutes est accordée.',
+  'Bonjour, bienvenue dans la salle jeux vidéo.',
+  'Un membre du personnel va arriver dans quelques instants. Veuillez patienter.',
+  'Si vous venez participer à l'heure de code vous pouvez vous installer dans la salle du fond.',
+  'Attention, la salle fermera dans quelques minutes !',
+  'Vous pouvez consulter les jeux disponibles sur place sur le panneau.',
 ];
 function buildQuickBtns() {{
   const c = document.getElementById('quickBtns');
