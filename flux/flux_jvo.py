@@ -608,7 +608,7 @@ document.getElementById('ttsText').addEventListener('keydown', e => {{
 const QUICK_PHRASES = [
   'Bonjour, bienvenue dans la salle jeux vidéo.',
   'Un membre du personnel va arriver dans quelques instants. Veuillez patienter.',
-  'Si vous venez participer à l\'heure de code vous pouvez vous installer dans la salle du fond.',
+  'Vous pouvez vous installer dans la salle du fond.',
   'Attention, la salle fermera dans quelques minutes !',
   'Vous pouvez consulter les jeux disponibles sur place sur le panneau.',
 ];
