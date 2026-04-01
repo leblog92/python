@@ -15,7 +15,7 @@ class MeteoApp:
     def __init__(self):
         """Initialise l'application"""
         print("=" * 50)
-        print("   APPLICATION MÉTÉO - OUEST PARISIEN")
+        print("   APPLICATION PRÉDICTION - OUEST PARISIEN")
         print("=" * 50)
         
         # Charger la configuration

@@ -43,6 +43,7 @@ class AudioCommandRecognizer:
             "bizarre": "sounds/bizarre.mp3",
             "boîte à coucou": "sounds/bac.mp3",
             "bonjour": "sounds/turret.mp3",
+            "bon courage": "sounds/courage.mp3",
             "bonne année": "sounds/new-year.mp3",
             "bye": "sounds/bye.mp3",
             "calimero": "sounds/calimero.mp3",

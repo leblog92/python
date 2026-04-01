@@ -15,12 +15,12 @@ class TTSService:
     
     def generate_weather_report(self, weather_summary: Dict) -> str:
         """
-        Génère un rapport météo textuel à partir des données
+        Génère un rapport textuel à partir des données
         """
         report_parts = []
         
         # En-tête
-        report_parts.append(f"Bulletin météo pour {weather_summary['date']}")
+        report_parts.append(f"Bulletin pour {weather_summary['date']}")
         report_parts.append(f"Localisation : {weather_summary['location']}")
         report_parts.append("")
         
