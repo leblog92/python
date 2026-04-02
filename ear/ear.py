@@ -1,665 +1,562 @@
-import speech_recognition as sr
-import pygame
-import time
+"""
+EAR — Enhanced Audio Recognition
+Core engine: speech recognition + command dispatch.
+
+New in this version
+───────────────────
+• All tunable parameters read from config.ini
+• System actions loaded from actions.ini
+• Vosk offline backend (set backend=vosk in config.ini)
+• measure_threshold() to find the right energy_threshold for your room
+• Log-rotation cap read from config.ini (log_max_lines)
+"""
+
+import configparser
 import os
+import platform
 import subprocess
 import threading
-import platform
-import sys
+import time
+import logging
+from pathlib import Path
 
-class AudioCommandRecognizer:
-    def __init__(self):
-        # Initialiser le recognizer
-        self.recognizer = sr.Recognizer()
-        self.microphone = sr.Microphone()
-        
-        # Initialiser pygame pour l'audio
-        pygame.mixer.init()
-        
-        # Dictionnaire des commandes et fichiers audio associés
-        self.commands = {
-            "aide informatique": "sounds/aide.mp3",
-            "anne": "sounds/no.mp3",
-            "achtung": "sounds/alarme.mp3",
-            "approximatif": "sounds/oh.mp3",
-            "approximative": "sounds/oh.mp3",
-            "approximativement": "sounds/oh.mp3",
-            "assistant": "sounds/assistante.mp3",
-            "astucieux": "sounds/debile.mp3",
-            "atelier informatique": "sounds/chaud.mp3",
-            "attention au matériel": "sounds/pete.mp3",
-            "au revoir": "sounds/au_revoir.mp3",
-            "banana": "sounds/banane.mp3",
-            "banane": "sounds/banane.mp3",
-            "bananes": "sounds/banane.mp3",
-            "barbara": "sounds/barbara.mp3",
-            "basile": "sounds/souffrance.mp3",
-            "bébé": "sounds/chapi.mp3",
-            "bière": "sounds/biere.mp3",
-            "biscuit": "sounds/biscuit.mp3",
-            "biscuits": "sounds/biscuit.mp3",
-            "bisou": "sounds/bisou.mp3",
-            "bisous": "sounds/bisou.mp3",
-            "bizarre": "sounds/bizarre.mp3",
-            "boîte à coucou": "sounds/bac.mp3",
-            "bonjour": "sounds/turret.mp3",
-            "bon courage": "sounds/courage.mp3",
-            "bonne année": "sounds/new-year.mp3",
-            "bye": "sounds/bye.mp3",
-            "calimero": "sounds/calimero.mp3",
-            "castlevania": "sounds/castlevania.mp3",
-            "cavalier": "sounds/cheval.mp3",
-            "c'est nul": "sounds/nul0.mp3",
-            "j'ai vu ça sur": "sounds/vrai.mp3",
-            "tu as vu ça sur": "sounds/vrai.mp3",
-            "ça m'énerve": "sounds/enerve.mp3",
-            "canard": "sounds/quack.mp3",
-            "cependant": "sounds/cependant.mp3",
-            "chat": "sounds/miaou.mp3",
-            "cheval": "sounds/cheval.mp3",
-            "chewbacca": "sounds/chewbacca.mp3",
-            "chiffrement": "sounds/pasfaux.mp3",
-            "chine": "sounds/chine.mp3",
-            "chinois": "sounds/chinois.mp3",
-            "ciao": "sounds/ciao.mp3",
-            "clignote": "sounds/urgence.mp3",
-            "communiste": "sounds/coco.mp3",
-            "coucou": "sounds/coucou.mp3",
-            "crise de nerfs": "sounds/mb.mp3",
-            "dark souls": "sounds/darksouls.mp3",
-            "dernière minute": "sounds/countdown.mp3",
-            "dernières minutes": "sounds/countdown.mp3",
-            "discret": "sounds/clang.mp3",
-            "dominique": "sounds/michel.mp3",
-            "doom": "sounds/doom.mp3",
-            "échec": "sounds/motus.mp3",
-            "erreur": "sounds/erreur.mp3",
-            "expire": "sounds/expire.mp3",
-            "expiré": "sounds/expire.mp3",
-            "expirer": "sounds/expire.mp3",
-            "euros": "sounds/combien.mp3",
-            "facebook": "sounds/facebook.mp3",
-            "faim": "sounds/faim.mp3",
-            "fc 24": "sounds/fifa.mp3",
-            "fc 25": "sounds/fifa.mp3",
-            "fc 26": "sounds/fifa.mp3",
-            "j'ai faim": "sounds/faim.mp3",
-            "fifa": "sounds/fifa.mp3",
-            "fin de partie": "sounds/fin.mp3",
-            "fin de session": "sounds/final_countdown.mp3",
-            "final countdown": "sounds/final_countdown.mp3",
-            "fortnite": "sounds/robocop.mp3",
-            "français": "sounds/french.mp3",
-            "frère": "sounds/frere.mp3",
-            "from software": "sounds/darksouls.mp3",
-            "gérard": "sounds/michel.mp3",
-            "bestiole": "sounds/bete.mp3",
-            "goodbye": "sounds/goodbye.mp3",
-            "grève": "sounds/greve.mp3",
-            "hanté": "sounds/ghost.mp3",
-            "hello": "sounds/hello.mp3",
-            "heure de code": "sounds/hoc.mp3",
-            "hitler": "sounds/nein.mp3",
-            "houston": "sounds/problem.mp3",
-            "incongru": "sounds/pasfaux.mp3",
-            "complication": "sounds/calimero.mp3",
-            "complications": "sounds/calimero.mp3",
-            "injuste": "sounds/calimero.mp3",
-            "inscription": "sounds/inscription.mp3",
-            "inscrire": "sounds/inscription.mp3",
-            "invocation": "sounds/lovecraft.mp3",
-            "invoquer": "sounds/lovecraft.mp3",
-            "italie": "sounds/italie.mp3",
-            "j'ai une théorie": "sounds/chagrin.mp3",
-            "j'ai raison": "sounds/pas faux.mp3",
-            "je suis choqué": "sounds/shock.mp3",
-            "j'en ai marre": "sounds/marre.mp3",
-            "jérémy": "sounds/souffrance.mp3",
-            "jésus": "sounds/jesus.mp3",
-            "johnny": "sounds/bac.mp3",
-            "jouet": "sounds/toy.mp3",
-            "laurent": "sounds/psycho.mp3",
-            "je reviens": "sounds/terminator.mp3",
-            "que coucou": "sounds/bac.mp3",
-            "la direction": "sounds/direction.mp3",
-            "lamentable": "sounds/cnul.mp3",
-            "léon": "sounds/leon.mp3",
-            "loïc": "sounds/loik.mp3",
-            "lovecraft": "sounds/lovecraft.mp3",
-            "mail": "sounds/mail.mp3",
-            "malheur": "sounds/malheur.mp3",
-            "malheureuse": "sounds/malheur.mp3",
-            "malheureux": "sounds/malheur.mp3",
-            "mal payé": "sounds/pauvres.mp3",
-            "mal payés": "sounds/pauvres.mp3",
-            "mario": "sounds/mario.mp3",
-            "mars attack": "sounds/mars.mp3",
-            "massacre": "sounds/doom.mp3",
-            "mathieu": "sounds/matthieu.mp3",
-            "maurice": "sounds/maurice.mp3",
-            "merci beaucoup": "sounds/merci.mp3",
-            "mes profs": "sounds/demon.mp3",
-            "miaou": "sounds/miaou.mp3",
-            "michel": "sounds/michel.mp3",
-            "mignon": "sounds/mignon.mp3",
-            "microsoft": "sounds/microsoft.mp3",
-            "minecraft": "sounds/kaamelott.mp3",
-            "modalité": "sounds/modalites.mp3",
-            "modalités": "sounds/modalites.mp3",
-            "mouton": "sounds/mouton.mp3",
-            "moutons": "sounds/mouton.mp3",
-            "mortal kombat": "sounds/mortal_kombat.mp3",
-            "mozzarella": "sounds/italie.mp3",
-            "nathalie": "sounds/nathalie.mp3",
-            "nazi": "sounds/hitler.mp3",
-            "neige": "sounds/neige.mp3",
-            "nintendo": "sounds/nintendo.mp3",
-            "normalement": "sounds/cependant.mp3",
-            "nurgle": "sounds/nurgle.mp3",
-            "olivier": "sounds/olivier.mp3",
-            "vache": "sounds/yawn.mp3",
-            "papa": "sounds/papa.mp3",
-            "paradoxal": "sounds/pasfaux.mp3",
-            "parmesan": "sounds/italie.mp3",
-            "pas assez payer": "sounds/pauvres.mp3",
-            "pas assez payé": "sounds/pauvres.mp3",
-            "pas assez payés": "sounds/pauvres.mp3",
-            "pas votre carte": "sounds/nelson.mp3",
-            "pauvres": "sounds/pauvres.mp3",
-            "pénible": "sounds/penible.mp3",
-            "perceval": "sounds/chagrin.mp3",
-            "père": "sounds/papa.mp3",
-            "périmé": "sounds/perime.mp3",
-            "périmée": "sounds/perime.mp3",
-            "périmer": "sounds/perime.mp3",
-            "philippe": "sounds/philippe.mp3",
-            "pikachu": "sounds/pikachu.mp3",
-            "pilotage": "sounds/pilote.mp3",
-            "pilote": "sounds/pilote.mp3",
-            "playstation": "sounds/playstation.mp3",
-            "pleurer": "sounds/pleurer.mp3",
-            "pleurnicher": "sounds/pleurer.mp3",
-            "poilu": "sounds/chewbacca.mp3",
-            "pourri": "sounds/pourri.mp3",
-            "planning": "sounds/planning.mp3",
-            "pokémon": "sounds/pikachu.mp3",
-            "poney": "sounds/poney.mp3",
-            "predator": "sounds/predator.mp3",
-            "gros problème": "sounds/problem.mp3",
-            "pizza": "sounds/italie.mp3",
-            "ps5": "sounds/playstation.mp3",
-            "putin": "sounds/russia.mp3",
-            "rembobine": "sounds/rewind.mp3",
-            "rembobiner": "sounds/rewind.mp3",
-            "rembobines": "sounds/rewind.mp3",
-            "réserver": "sounds/resa.mp3",
-            "reste en vie": "sounds/staying.mp3",
-            "réunion": "sounds/nono.mp3",
-            "rire": "sounds/nelson.mp3",
-            "romantique": "sounds/romantique.mp3",
-            "russe": "sounds/cnormal.mp3",
-            "russie": "sounds/cnormal.mp3",
-            "samourai": "sounds/samurai.mp3",
-            "samouraï": "sounds/samurai.mp3",
-            "saxophone": "sounds/saxophone.mp3",
-            "seul": "sounds/solitude.mp3",
-            "seule": "sounds/solitude.mp3",
-            "solitude": "sounds/solitude.mp3",
-            "souffrir": "sounds/souffrir.mp3",
-            "sonic": "sounds/sonic.mp3",
-            "star wars": "sounds/star.mp3",
-            "staying alive": "sounds/staying.mp3",
-            "suffisant": "sounds/suffisant.mp3",
-            "super génial": "sounds/super.mp3",
-            "switch": "sounds/nintendo.mp3",
-            "trop chaud": "sounds/chaud.mp3",
-            "tout est super": "sounds/super.mp3",
-            "tout est super génial": "sounds/super.mp3",
-            "tu as entendu": "sounds/bonjour.mp3",
-            "twitter": "sounds/twitter.mp3",
-            "une autre galaxie": "sounds/xfiles.mp3",
-            "usine": "sounds/biscuit.mp3",
-            "urgence": "sounds/urgence.mp3",
-            "urgences": "sounds/urgence.mp3",
-            "vainqueur": "sounds/yeah.mp3",
-            "vampire": "sounds/castlevania.mp3",
-            "velu": "sounds/chewbacca.mp3",
-            "venu d'ailleurs": "sounds/xfiles.mp3",
-            "venus d'ailleurs": "sounds/xfiles.mp3",
-            "villageois": "sounds/minecraft.mp3",
-            "virus": "sounds/virus.mp3",
-            "vomir": "sounds/vomir.mp3",
-            "vous ne passerez pas": "sounds/vous_ne_passerez_pas.mp3",
-            "warhammer": "sounds/warhammer.mp3",
-            "wehrmacht": "sounds/hitler.mp3",
-            "wesh": "sounds/wesh.mp3",
-            "windows": "sounds/windows.mp3",
-            "xbox": "sounds/xbox.mp3",
-            "yoshi": "sounds/yoshi.mp3",
-            "zombie": "sounds/zombie.mp3"
-        }
-        
-        # Dictionnaire des actions système
-        self.system_actions = {
-            # Fichiers spécifiques
-            "fichier heure de code": {
-                "type": "fichier",
-                "path": r"L:\Groups\mediatheque\06- SECTEUR INFORMATIQUE\9- HEURE DE CODE\Inscription HOC.xlsx",
-                "action": "open_file"
-            },
-            "fichier jeux vidéo": {
-                "type": "fichier",
-                "path": r"L:\Groups\mediatheque\06- SECTEUR INFORMATIQUE\7- SALLE JVO\SERVICE PUBLIC\INSCRIPTION CRENEAUX JEUX VIDEO 2024.xlsx",
-                "action": "open_file"
-            },
-            "lance streaming": {
-                "type": "fichier",
-                "path": r"apps/cam.bat",
-                "action": "open_file"
-            },
-            "capture audio": {
-                "type": "fichier",
-                "path": r"apps/audio.bat",
-                "action": "open_file"
-            },
-            "capture vidéo": {
-                "type": "fichier",
-                "path": r"apps/video.bat",
-                "action": "open_file"
-            },
-            "gmail": {
-                "type": "fichier",
-                "path": r"apps/gma.lnk",
-                "action": "open_file"
-            },
-            "numérique pour tous": {
-                "type": "fichier",
-                "path": r"apps/npm.lnk",
-                "action": "open_file"
-            },
-            "catalogue médiathèque": {
-                "type": "fichier",
-                "path": r"apps/cat.lnk",
-                "action": "open_file"
-            },
-            "modification programme": {
-                "type": "fichier",
-                "path": r"apps/mod.bat",
-                "action": "open_file"
-            },
-            "contournement": {
-                "type": "fichier",
-                "path": r"apps/psiphon.exe",
-                "action": "open_file"
-            },
-            "redémarrer": {
-                "type": "fichier",
-                "path": r"apps/restart.bat",
-                "action": "open_file"
-            },
-            "météo": {
-                "type": "fichier",
-                "path": r"meteo/launch_direct.bat",
-                "action": "open_file"
-            },
-            "météo demain": {
-                "type": "fichier",
-                "path": r"meteo/launch_direct.bat",
-                "action": "open_file"
-            },
-            "prévision météo": {
-                "type": "fichier",
-                "path": r"meteo/launch_direct.bat",
-                "action": "open_file"
-            },
-            "quel temps fera-t-il demain": {
-                "type": "fichier",
-                "path": r"meteo/launch_direct.bat",
-                "action": "open_file"
-            },
-            "redémarrage": {
-                "type": "fichier",
-                "path": r"apps/restart.bat",
-                "action": "open_file"
-            },
-            "retouche photo": {
-                "type": "fichier",
-                "path": r"apps/gimp.lnk",
-                "action": "open_file"
-            },
-            "modification photo": {
-                "type": "fichier",
-                "path": r"apps/gimp.lnk",
-                "action": "open_file"
-            },
-            "retouche audio": {
-                "type": "fichier",
-                "path": r"apps/auda.lnk",
-                "action": "open_file"
-            },
-            "modification audio": {
-                "type": "fichier",
-                "path": r"apps/auda.lnk",
-                "action": "open_file"
-            },
-            "ouvre caméra": {
-                "type": "fichier",
-                "path": r"L:\Groups\mediatheque\06- SECTEUR INFORMATIQUE\7- SALLE JVO\cam.html",
-                "action": "open_file"
-            },
-            "internet": {
-                "type": "fichier",
-                "path": r"apps/brave.lnk",
-                "action": "open_file"
-            },
-            "spotify": {
-                "type": "fichier",
-                "path": r"apps/spo.lnk",
-                "action": "open_file"
-            },
-            "recherche profonde": {
-                "type": "fichier",
-                "path": r"apps/ds.lnk",
-                "action": "open_file"
-            },
-            "outlook": {
-                "type": "fichier",
-                "path": r"apps/out.lnk",
-                "action": "open_file"
-            },
-            # Applications système
-            "calculatrice": {
+import pygame
+
+# ──────────────────────────────────────────────
+# Logging
+# ──────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger("EAR")
+
+
+# ──────────────────────────────────────────────
+# File paths
+# ──────────────────────────────────────────────
+CONFIG_FILE   = "config.ini"
+KEYWORDS_FILE = "keywords.txt"
+ACTIONS_FILE  = "actions.ini"
+SOUNDS_DIR    = "sounds"
+
+_DEFAULTS = {
+    "recognition": {
+        "backend":           "google",
+        "language":          "fr-FR",
+        "vosk_model_path":   "models/vosk-model-small-fr-0.22",
+        "pause_threshold":   "0.5",
+        "phrase_time_limit": "3",
+        "listen_timeout":    "0.5",
+    },
+    "audio": {
+        "energy_threshold": "300",
+        "dynamic_energy":   "false",
+    },
+    "commands": {
+        "cooldown_sec":  "2.0",
+        "log_max_lines": "500",
+    },
+    "network": {
+        "max_retry":       "5",
+        "retry_delay_sec": "3",
+    },
+}
+
+
+# ──────────────────────────────────────────────
+# Config loader
+# ──────────────────────────────────────────────
+def load_config() -> configparser.ConfigParser:
+    cfg = configparser.ConfigParser()
+    for section, values in _DEFAULTS.items():
+        cfg[section] = values
+    if os.path.exists(CONFIG_FILE):
+        cfg.read(CONFIG_FILE, encoding="utf-8")
+        logger.info(f"Config loaded from {CONFIG_FILE}")
+    else:
+        logger.warning(f"{CONFIG_FILE} not found — using built-in defaults")
+    return cfg
+
+
+# ──────────────────────────────────────────────
+# Keywords loader
+# ──────────────────────────────────────────────
+def load_keywords(filepath: str = KEYWORDS_FILE) -> dict:
+    """
+    Load audio commands from keywords.txt.
+    Format:  trigger phrase = sounds/file.mp3
+    Sorted by key length descending (longest match wins).
+    """
+    commands: dict[str, str] = {}
+    if not os.path.exists(filepath):
+        logger.warning(f"Keywords file not found: {filepath}")
+        return commands
+
+    with open(filepath, encoding="utf-8") as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                logger.warning(f"keywords.txt line {lineno} skipped (no '='): {raw.rstrip()}")
+                continue
+            key, _, val = line.partition("=")
+            key, val = key.strip().lower(), val.strip()
+            if key and val:
+                commands[key] = val
+
+    sorted_cmds = dict(sorted(commands.items(), key=lambda x: len(x[0]), reverse=True))
+    logger.info(f"{len(sorted_cmds)} audio commands loaded from {filepath}")
+    return sorted_cmds
+
+
+# ──────────────────────────────────────────────
+# Actions loader
+# ──────────────────────────────────────────────
+def load_actions(filepath: str = ACTIONS_FILE) -> dict:
+    """
+    Load system actions from actions.ini.
+    Each [section] is a trigger phrase.
+    Sorted by key length descending.
+    """
+    actions: dict[str, dict] = {}
+    if not os.path.exists(filepath):
+        logger.warning(f"Actions file not found: {filepath} — system actions disabled")
+        return actions
+
+    cfg = configparser.ConfigParser()
+    cfg.read(filepath, encoding="utf-8")
+
+    for trigger in cfg.sections():
+        section = cfg[trigger]
+        kind = section.get("type", "").strip().lower()
+        key  = trigger.strip().lower()
+
+        if kind == "file":
+            path = section.get("path", "").strip()
+            if path:
+                actions[key] = {"type": "file", "path": path, "action": "open_file"}
+            else:
+                logger.warning(f"actions.ini [{trigger}]: missing 'path'")
+        elif kind == "app":
+            actions[key] = {
                 "type": "app",
+                "action": "launch_app",
                 "command": {
-                    "windows": "calc.exe",
-                    "linux": "gnome-calculator",
-                    "darwin": "Calculator"
+                    "windows": section.get("windows", "").strip(),
+                    "linux":   section.get("linux",   "").strip(),
+                    "darwin":  section.get("darwin",  "").strip(),
                 },
-                "action": "launch_app"
-            },
-            "bloc-note": {
-                "type": "app",
-                "command": {
-                    "windows": "notepad.exe",
-                    "linux": "gedit",
-                    "darwin": "open -a 'TextEdit'"
-                },
-                "action": "launch_app"
-            },
-            "explorateur de fichiers": {
-                "type": "app",
-                "command": {
-                    "windows": "explorer.exe",
-                    "linux": "nautilus",
-                    "darwin": "open ."
-                },
-                "action": "launch_app"
             }
-        }
-        
-        # Créer le dossier des sons s'il n'existe pas
-        if not os.path.exists("sounds"):
-            os.makedirs("sounds")
-            
-        self.is_listening = False
-        
-        # Callbacks pour l'interface graphique
+        else:
+            logger.warning(f"actions.ini [{trigger}]: unknown type '{kind}'")
+
+    sorted_actions = dict(sorted(actions.items(), key=lambda x: len(x[0]), reverse=True))
+    logger.info(f"{len(sorted_actions)} system actions loaded from {filepath}")
+    return sorted_actions
+
+
+# ──────────────────────────────────────────────
+# Vosk backend
+# ──────────────────────────────────────────────
+class VoskBackend:
+    """Offline speech recognition via Vosk."""
+
+    def __init__(self, model_path: str):
+        try:
+            from vosk import Model, KaldiRecognizer
+            import sounddevice as sd
+            import json
+            self._json   = json
+            self._sd     = sd
+            self._KaldiR = KaldiRecognizer
+            if not os.path.exists(model_path):
+                raise FileNotFoundError(
+                    f"Vosk model not found at '{model_path}'.\n"
+                    "Download from https://alphacephei.com/vosk/models\n"
+                    "and extract to that path."
+                )
+            self._model = Model(model_path)
+            logger.info(f"Vosk model loaded: {model_path}")
+        except ImportError:
+            raise ImportError(
+                "Vosk backend requires 'vosk' and 'sounddevice'.\n"
+                "Run: pip install vosk sounddevice"
+            )
+
+    def listen_once(self, phrase_limit: float) -> str | None:
+        samplerate = 16000
+        rec = self._KaldiR(self._model, samplerate)
+        max_blocks = int(phrase_limit * samplerate / 512)
+
+        with self._sd.InputStream(samplerate=samplerate, channels=1,
+                                   dtype="int16", blocksize=512) as stream:
+            for _ in range(max_blocks):
+                data, _ = stream.read(512)
+                if rec.AcceptWaveform(data.tobytes()):
+                    result = self._json.loads(rec.Result())
+                    text = result.get("text", "").strip()
+                    if text:
+                        return text
+
+        return self._json.loads(rec.FinalResult()).get("text", "").strip() or None
+
+
+# ──────────────────────────────────────────────
+# Main recognizer
+# ──────────────────────────────────────────────
+class AudioCommandRecognizer:
+
+    def __init__(self):
+        self.cfg = load_config()
+        self._apply_config()
+
+        pygame.mixer.init()
+
+        self.commands       = load_keywords()
+        self.system_actions = load_actions()
+        self._last_triggered: dict[str, float] = {}
+
+        Path(SOUNDS_DIR).mkdir(exist_ok=True)
+        self.is_listening  = False
+        self._listen_thread: threading.Thread | None = None
+
+        # GUI callbacks
         self.on_command_detected = None
-        self.on_audio_playing = None
-        self.on_error = None
-        self.on_listening_start = None
-        self.on_listening_stop = None
-        self.on_word_heard = None  # Nouveau callback pour les mots entendus
-        
+        self.on_audio_playing    = None
+        self.on_error            = None
+        self.on_listening_start  = None
+        self.on_listening_stop   = None
+        self.on_word_heard       = None
+
+    def _apply_config(self):
+        rec = self.cfg["recognition"]
+        aud = self.cfg["audio"]
+        cmd = self.cfg["commands"]
+        net = self.cfg["network"]
+
+        self.backend       = rec.get("backend", "google").lower()
+        self.language      = rec.get("language", "fr-FR")
+        self.pause_thresh  = float(rec.get("pause_threshold",   "0.5"))
+        self.phrase_limit  = float(rec.get("phrase_time_limit", "3"))
+        self.listen_timeout= float(rec.get("listen_timeout",    "0.5"))
+        self.energy_thresh = int(aud.get("energy_threshold", "300"))
+        self.dynamic_energy= aud.get("dynamic_energy", "false").lower() == "true"
+        self.cooldown_sec  = float(cmd.get("cooldown_sec",  "2.0"))
+        self.log_max_lines = int(cmd.get("log_max_lines", "500"))
+        self.max_retry     = int(net.get("max_retry",       "5"))
+        self.retry_delay   = int(net.get("retry_delay_sec", "3"))
+
+        if self.backend == "vosk":
+            model_path  = rec.get("vosk_model_path", "models/vosk-model-small-fr-0.22")
+            self._vosk  = VoskBackend(model_path)
+            self._sr    = None
+            self._rec   = None
+            self._mic   = None
+        else:
+            import speech_recognition as sr
+            self._sr  = sr
+            self._rec = sr.Recognizer()
+            self._mic = sr.Microphone()
+            self._rec.energy_threshold         = self.energy_thresh
+            self._rec.dynamic_energy_threshold = self.dynamic_energy
+            self._rec.pause_threshold          = self.pause_thresh
+            self._vosk = None
+
+    # ── Reload helpers ────────────────────────
+    def reload_keywords(self):
+        self.commands = load_keywords()
+        self._notify_word(f"keywords.txt reloaded — {len(self.commands)} commands")
+
+    def reload_actions(self):
+        self.system_actions = load_actions()
+        self._notify_word(f"actions.ini reloaded — {len(self.system_actions)} actions")
+
+    def reload_config(self):
+        self.cfg = load_config()
+        self._apply_config()
+        self._notify_word("config.ini reloaded.")
+
+    # ── Notifications ─────────────────────────
+    def _notify_word(self, msg: str):
+        if self.on_word_heard:
+            self.on_word_heard(msg)
+
+    def _notify_error(self, msg: str):
+        logger.error(msg)
+        if self.on_error:
+            self.on_error(msg)
+
+    def _stop_and_wait(self):
+        """Signal the listen loop to stop and block until the thread exits."""
+        self.is_listening = False
+        if self._listen_thread and self._listen_thread.is_alive():
+            self._listen_thread.join(timeout=3)
+
+    def _start_thread(self):
+        """Spawn a new listen thread and store the reference."""
+        self.is_listening    = True
+        self._listen_thread  = threading.Thread(
+            target=self.ecouter_et_repondre,
+            daemon=True,
+            name="EAR-listen",
+        )
+        self._listen_thread.start()
+
+    # ── Cooldown ──────────────────────────────
+    def _on_cooldown(self, trigger: str) -> bool:
+        return (time.time() - self._last_triggered.get(trigger, 0)) < self.cooldown_sec
+
+    def _mark(self, trigger: str):
+        self._last_triggered[trigger] = time.time()
+
+    # ── Calibration ───────────────────────────
     def calibrer_micro(self):
-        """microphone calibration"""
-        # Notifier l'interface graphique
-        if self.on_word_heard:
-            self.on_word_heard("Calibration audio en cours... parlez maintenant.")
-            
-        with self.microphone as source:
-            self.recognizer.adjust_for_ambient_noise(source, duration=2)
-        
-        if self.on_word_heard:
-            self.on_word_heard("Calibration terminée!")
-    
-    def jouer_audio(self, fichier):
-        """Joue un fichier audio"""
+        """Adjust energy_threshold to current ambient noise.
+        Stops the listen loop first so the mic is free."""
+        if self.backend == "vosk":
+            self._notify_word("Calibration not needed for Vosk backend.")
+            return
+
+        was_listening = self.is_listening
+        self._stop_and_wait()
+
+        try:
+            self._notify_word("Calibrating audio… please stay quiet.")
+            with self._mic as source:
+                self._rec.adjust_for_ambient_noise(source, duration=2)
+            self.energy_thresh = int(self._rec.energy_threshold)
+            self._notify_word(f"Calibration complete. Threshold: {self.energy_thresh}")
+        except Exception as e:
+            self._notify_error(f"Calibration error: {e}")
+        finally:
+            if was_listening:
+                self._start_thread()
+
+    def measure_threshold(self) -> int | None:
+        """
+        Measure ambient noise for 3 s and report the suggested energy_threshold.
+        Does not change the current value — copy it to config.ini manually.
+        """
+        if self.backend == "vosk":
+            self._notify_word("Threshold measurement not available for Vosk backend.")
+            return None
+
+        was_listening = self.is_listening
+        self._stop_and_wait()
+
+        try:
+            import speech_recognition as sr
+            self._notify_word("Measuring ambient noise… stay quiet for 3 s.")
+            r = sr.Recognizer()
+            with self._mic as source:
+                r.adjust_for_ambient_noise(source, duration=3)
+            measured = int(r.energy_threshold)
+            self._notify_word(
+                f"Measured: {measured}  (current: {self.energy_thresh})  "
+                f"— set energy_threshold = {measured} in config.ini to lock this in."
+            )
+            return measured
+        except Exception as e:
+            self._notify_error(f"Threshold measurement error: {e}")
+            return None
+        finally:
+            if was_listening:
+                self._start_thread()
+
+    # ── Audio ─────────────────────────────────
+    def jouer_audio(self, fichier: str):
         try:
             if os.path.exists(fichier):
-                # Notifier l'interface graphique
                 if self.on_audio_playing:
                     self.on_audio_playing(fichier)
-                
-                if self.on_word_heard:
-                    self.on_word_heard(f"▶️ Lecture: {os.path.basename(fichier)}")
-                
+                self._notify_word(f"Playing: {os.path.basename(fichier)}")
                 pygame.mixer.music.load(fichier)
                 pygame.mixer.music.play()
-                
-                # Attendre que la musique se termine
                 while pygame.mixer.music.get_busy():
                     time.sleep(0.1)
             else:
-                if self.on_error:
-                    self.on_error(f"Fichier audio non trouvé: {fichier}")
+                self._notify_error(f"Audio file not found: {fichier}")
         except Exception as e:
-            if self.on_error:
-                self.on_error(f"Erreur lors de la lecture audio: {str(e)}")
-    
-    def ouvrir_fichier(self, chemin_fichier):
-        """Ouvre un fichier avec l'application par défaut"""
+            self._notify_error(f"Audio playback error: {e}")
+
+    # ── File / app launchers ──────────────────
+    def ouvrir_fichier(self, chemin: str) -> bool:
         try:
-            system = platform.system().lower()
-            
-            # Convertir en chemin absolu
-            if not os.path.isabs(chemin_fichier):
-                chemin_absolu = os.path.abspath(chemin_fichier)
-            else:
-                chemin_absolu = chemin_fichier
-            
-            if not os.path.exists(chemin_absolu):
-                if self.on_error:
-                    self.on_error(f"Fichier introuvable: {chemin_absolu}")
+            p = chemin if os.path.isabs(chemin) else os.path.abspath(chemin)
+            if not os.path.exists(p):
+                self._notify_error(f"File not found: {p}")
                 return False
-            
+            system = platform.system().lower()
             if system == "windows":
-                subprocess.Popen(f'start "" "{chemin_absolu}"', shell=True)
+                subprocess.Popen(f'start "" "{p}"', shell=True)
             elif system == "darwin":
-                subprocess.Popen(["open", chemin_absolu])
+                subprocess.Popen(["open", p])
             else:
-                subprocess.Popen(["xdg-open", chemin_absolu])
-            
-            if self.on_word_heard:
-                self.on_word_heard(f"📂 Fichier ouvert: {os.path.basename(chemin_absolu)}")
+                subprocess.Popen(["xdg-open", p])
+            self._notify_word(f"File opened: {os.path.basename(p)}")
             return True
-            
         except Exception as e:
-            if self.on_error:
-                self.on_error(f"Erreur lors de l'ouverture: {str(e)}")
+            self._notify_error(f"Error opening file: {e}")
             return False
-    
-    def lancer_programme(self, commande):
-        """Lance un programme"""
+
+    def lancer_programme(self, commande: str) -> bool:
         try:
-            system = platform.system().lower()
-            
-            if system == "windows":
-                subprocess.Popen(commande, shell=True)
-            elif system == "darwin":
-                subprocess.Popen(commande, shell=True)
-            else:
-                subprocess.Popen(commande, shell=True)
-            
-            if self.on_word_heard:
-                self.on_word_heard(f"🚀 Programme lancé: {commande}")
+            subprocess.Popen(commande, shell=True)
+            self._notify_word(f"App launched: {commande}")
             return True
-            
         except Exception as e:
-            if self.on_error:
-                self.on_error(f"Erreur lors du lancement: {str(e)}")
+            self._notify_error(f"Error launching app: {e}")
             return False
-    
-    def executer_action_systeme(self, action_info):
-        """Exécute une action système"""
-        action_type = action_info["type"]
-        action = action_info["action"]
-        
-        if action == "open_file" and action_type == "fichier":
-            chemin = action_info["path"]
-            if os.path.exists(chemin):
-                return self.ouvrir_fichier(chemin)
-            else:
-                if self.on_error:
-                    self.on_error(f"Fichier système non trouvé: {chemin}")
-                return False
-                
-        elif action == "launch_app" and action_type == "app":
-            system = platform.system().lower()
-            commande = action_info["command"].get(system)
-            
-            if commande:
-                return self.lancer_programme(commande)
-            else:
-                if self.on_error:
-                    self.on_error(f"Commande non disponible pour {system}")
-                return False
-        
+
+    def executer_action_systeme(self, action_info: dict) -> bool:
+        if action_info["action"] == "open_file" and action_info["type"] == "file":
+            return self.ouvrir_fichier(action_info["path"])
+        elif action_info["action"] == "launch_app" and action_info["type"] == "app":
+            cmd = action_info["command"].get(platform.system().lower(), "")
+            if cmd:
+                return self.lancer_programme(cmd)
+            self._notify_error(f"No command for platform: {platform.system()}")
         return False
-    
-    def reconnaitre_commande(self, audio):
-        """Reconnaît la parole et retourne la commande"""
-        try:
-            # Reconnaissance en français
-            texte = self.recognizer.recognize_google(audio, language="fr-FR")
-            texte = texte.lower()
-            
-            # Afficher le texte reconnu dans l'interface
-            if self.on_word_heard:
-                self.on_word_heard(f"🗣️ Mot détecté: \"{texte}\"")
-            
-            # Vérifier les actions système d'abord
-            for commande, action_info in self.system_actions.items():
-                if commande in texte:
-                    return commande, None, action_info
-            
-            # Vérifier les commandes audio
-            for commande, fichier_audio in self.commands.items():
-                if commande in texte:
-                    return commande, fichier_audio, None
-         
-            return None, None, None
-            
-        except sr.UnknownValueError:
-            if self.on_error:
-                self.on_error("Voice recognition: Audio not understood")
-            return None, None, None
-        except sr.RequestError as e:
-            if self.on_error:
-                self.on_error(f"Erreur avec le service de reconnaissance: {str(e)}")
-            return None, None, None
-        except Exception as e:
-            if self.on_error:
-                self.on_error(f"Erreur inattendue: {str(e)}")
-            return None, None, None
-    
-    def traiter_commande(self, commande, fichier_audio, action_info):
-        """Traite la commande détectée"""
-        if commande == "stop":
+
+    # ── Text matching ─────────────────────────
+    def _match(self, texte: str) -> tuple:
+        self._notify_word(f'Detected: "{texte}"')
+        for trigger, info in self.system_actions.items():
+            if trigger in texte:
+                return trigger, None, info
+        for trigger, audio in self.commands.items():
+            if trigger in texte:
+                return trigger, audio, None
+        return None, None, None
+
+    # ── Command dispatch ──────────────────────
+    def traiter_commande(self, trigger: str, audio_file, action_info):
+        if trigger == "stop":
             self.is_listening = False
             return
-            
-        elif action_info:
-            # Notifier l'interface graphique
+        if self._on_cooldown(trigger):
+            logger.debug(f"Cooldown active: {trigger}")
+            return
+        self._mark(trigger)
+        if action_info:
             if self.on_command_detected:
-                self.on_command_detected(commande, None, action_info)
-                
+                self.on_command_detected(trigger, None, action_info)
             success = self.executer_action_systeme(action_info)
-            if success and commande in self.commands:
-                self.jouer_audio(self.commands[commande])
-            
-        elif commande and fichier_audio:
-            # Notifier l'interface graphique
+            if success and trigger in self.commands:
+                self.jouer_audio(self.commands[trigger])
+        elif trigger and audio_file:
             if self.on_command_detected:
-                self.on_command_detected(commande, fichier_audio, None)
-                
-            self.jouer_audio(fichier_audio)
-    
+                self.on_command_detected(trigger, audio_file, None)
+            self.jouer_audio(audio_file)
+
+    # ── Listen loop ───────────────────────────
     def ecouter_et_repondre(self):
-        """Écoute en continu et répond aux commandes"""
-        # Notifier le démarrage de l'écoute
         if self.on_listening_start:
             self.on_listening_start()
-        
-        with self.microphone as source:
+        if self.backend == "vosk":
+            self._loop_vosk()
+        else:
+            self._loop_google()
+        if self.on_listening_stop:
+            self.on_listening_stop()
+
+    def _loop_google(self):
+        net_errors = 0
+        with self._mic as source:
             while self.is_listening:
                 try:
-                    # Ne pas écouter pendant la lecture audio
                     if pygame.mixer.music.get_busy():
                         time.sleep(0.1)
                         continue
-                    
-                    audio = self.recognizer.listen(source, timeout=1, phrase_time_limit=5)
-                    
-                    # Traiter l'audio
-                    commande, fichier_audio, action_info = self.reconnaitre_commande(audio)
-                    if commande:
-                        self.traiter_commande(commande, fichier_audio, action_info)
-                    
-                except sr.WaitTimeoutError:
+                    audio = self._rec.listen(
+                        source,
+                        timeout=self.listen_timeout,
+                        phrase_time_limit=self.phrase_limit,
+                    )
+                    try:
+                        texte = self._rec.recognize_google(audio, language=self.language).lower()
+                    except self._sr.UnknownValueError:
+                        continue
+                    net_errors = 0
+                    trigger, audio_file, action_info = self._match(texte)
+                    if trigger:
+                        self.traiter_commande(trigger, audio_file, action_info)
+
+                except self._sr.WaitTimeoutError:
                     continue
+                except self._sr.RequestError:
+                    net_errors += 1
+                    if net_errors >= self.max_retry:
+                        self._notify_error(
+                            f"Speech service unavailable after {self.max_retry} attempts. "
+                            f"Retrying in {self.retry_delay}s…"
+                        )
+                        time.sleep(self.retry_delay)
+                        net_errors = 0
+                    else:
+                        time.sleep(1)
+                except OSError as e:
+                    self._notify_error(f"Microphone error: {e} — reconnecting in {self.retry_delay}s")
+                    time.sleep(self.retry_delay)
+                    try:
+                        import speech_recognition as sr
+                        self._mic = sr.Microphone()
+                        source = self._mic.__enter__()
+                        self._notify_word("Microphone reconnected.")
+                    except Exception as re:
+                        self._notify_error(f"Microphone reconnection failed: {re}")
+                        self.is_listening = False
                 except Exception as e:
-                    if self.on_error:
-                        self.on_error(f"Erreur d'écoute: {str(e)}")
-        
-        # Notifier l'arrêt de l'écoute
-        if self.on_listening_stop:
-            self.on_listening_stop()
-    
+                    self._notify_error(f"Unexpected error: {e}")
+                    time.sleep(0.5)
+
+    def _loop_vosk(self):
+        while self.is_listening:
+            try:
+                if pygame.mixer.music.get_busy():
+                    time.sleep(0.1)
+                    continue
+                texte = self._vosk.listen_once(self.phrase_limit)
+                if texte:
+                    trigger, audio_file, action_info = self._match(texte)
+                    if trigger:
+                        self.traiter_commande(trigger, audio_file, action_info)
+            except Exception as e:
+                self._notify_error(f"Vosk error: {e}")
+                time.sleep(0.5)
+
     def demarrer(self):
-        """Démarre le système de reconnaissance"""
         self.calibrer_micro()
-        self.is_listening = True
-        
-        # Démarrer dans un thread
-        self.thread_ecoute = threading.Thread(target=self.ecouter_et_repondre)
-        self.thread_ecoute.daemon = True
-        self.thread_ecoute.start()
+        self._start_thread()
 
 
+# ──────────────────────────────────────────────
+# Entry point
+# ──────────────────────────────────────────────
 def verifier_fichiers_audio():
-    """Vérifie la présence des fichiers audio (sans affichage console)"""
-    sounds_dir = "sounds"
-    fichiers_manquants = []
-    
-    if os.path.exists(sounds_dir):
-        return True
-    else:
-        os.makedirs(sounds_dir)
-        return False
+    Path(SOUNDS_DIR).mkdir(exist_ok=True)
+    return True
 
 
 if __name__ == "__main__":
-    # Toujours lancer avec l'interface graphique
     try:
         from ear_gui import VoiceAssistantGUI
-        
-        # Cacher la console Windows
+
         if platform.system() == "Windows":
             import ctypes
             ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
-        
+
         verifier_fichiers_audio()
-        
-        # Démarrer l'application
         app = AudioCommandRecognizer()
         gui = VoiceAssistantGUI(app)
         gui.run()
-        
+
     except ImportError as e:
-        # En cas d'erreur, afficher une boîte de dialogue
         import tkinter as tk
         from tkinter import messagebox
         root = tk.Tk()
         root.withdraw()
-        messagebox.showerror("Erreur", f"Impossible de lancer l'interface graphique:\n{e}")
+        messagebox.showerror("Error", f"Could not launch the graphical interface:\n{e}")

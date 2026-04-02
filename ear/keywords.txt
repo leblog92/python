@@ -1,1 +1,260 @@
-zeb
+# ══════════════════════════════════════════════════════════════════
+# EAR — Fichier de commandes vocales
+# Format : mot_clé = sounds/fichier.mp3
+# • Une commande par ligne
+# • Les lignes commençant par # sont des commentaires
+# • Insensible à la casse (tout est converti en minuscules)
+# • Les expressions longues sont prioritaires sur les mots courts
+#   → pas besoin d'ordonner manuellement les lignes
+# ══════════════════════════════════════════════════════════════════
+
+# ── Salutations ───────────────────────────────────────────────────
+bonjour                     = sounds/turret.mp3
+tu as entendu               = sounds/bonjour.mp3
+hello                       = sounds/hello.mp3
+coucou                      = sounds/coucou.mp3
+au revoir                   = sounds/au_revoir.mp3
+goodbye                     = sounds/goodbye.mp3
+bye                         = sounds/bye.mp3
+ciao                        = sounds/ciao.mp3
+bonne année                 = sounds/new-year.mp3
+
+# ── Réactions générales ───────────────────────────────────────────
+aide informatique           = sounds/aide.mp3
+achtung                     = sounds/alarme.mp3
+approximatif                = sounds/oh.mp3
+approximative               = sounds/oh.mp3
+approximativement           = sounds/oh.mp3
+assistant                   = sounds/assistante.mp3
+astucieux                   = sounds/debile.mp3
+atelier informatique        = sounds/chaud.mp3
+attention au matériel       = sounds/pete.mp3
+bizarre                     = sounds/bizarre.mp3
+bon courage                 = sounds/courage.mp3
+ça m'énerve                 = sounds/enerve.mp3
+crise de nerfs              = sounds/mb.mp3
+discret                     = sounds/clang.mp3
+erreur                      = sounds/erreur.mp3
+expire                      = sounds/expire.mp3
+expiré                      = sounds/expire.mp3
+expirer                     = sounds/expire.mp3
+gros problème               = sounds/problem.mp3
+houston                     = sounds/problem.mp3
+incongru                    = sounds/pasfaux.mp3
+chiffrement                 = sounds/pasfaux.mp3
+paradoxal                   = sounds/pasfaux.mp3
+injuste                     = sounds/calimero.mp3
+complication                = sounds/calimero.mp3
+complications               = sounds/calimero.mp3
+j'ai une théorie            = sounds/chagrin.mp3
+j'ai raison                 = sounds/pasfaux.mp3
+j'ai vu ça sur              = sounds/vrai.mp3
+tu as vu ça sur             = sounds/vrai.mp3
+je reviens                  = sounds/terminator.mp3
+je suis choqué              = sounds/shock.mp3
+j'en ai marre               = sounds/marre.mp3
+lamentable                  = sounds/cnul.mp3
+malheur                     = sounds/malheur.mp3
+malheureuse                 = sounds/malheur.mp3
+malheureux                  = sounds/malheur.mp3
+pénible                     = sounds/penible.mp3
+reste en vie                = sounds/staying.mp3
+staying alive               = sounds/staying.mp3
+urgence                     = sounds/urgence.mp3
+urgences                    = sounds/urgence.mp3
+clignote                    = sounds/urgence.mp3
+virus                       = sounds/virus.mp3
+vous ne passerez pas        = sounds/vous_ne_passerez_pas.mp3
+
+# ── Expressions du quotidien ──────────────────────────────────────
+merci beaucoup              = sounds/merci.mp3
+j'ai faim                   = sounds/faim.mp3
+faim                        = sounds/faim.mp3
+super génial                = sounds/super.mp3
+tout est super génial       = sounds/super.mp3
+tout est super              = sounds/super.mp3
+suffisant                   = sounds/suffisant.mp3
+seul                        = sounds/solitude.mp3
+seule                       = sounds/solitude.mp3
+solitude                    = sounds/solitude.mp3
+souffrir                    = sounds/souffrir.mp3
+pleurer                     = sounds/pleurer.mp3
+pleurnicher                 = sounds/pleurer.mp3
+vomir                       = sounds/vomir.mp3
+romantique                  = sounds/romantique.mp3
+rire                        = sounds/nelson.mp3
+pas votre carte             = sounds/nelson.mp3
+trop chaud                  = sounds/chaud.mp3
+réunion                     = sounds/nono.mp3
+grève                       = sounds/greve.mp3
+
+# ── Argent & travail ──────────────────────────────────────────────
+mal payé                    = sounds/pauvres.mp3
+mal payés                   = sounds/pauvres.mp3
+pas assez payé              = sounds/pauvres.mp3
+pas assez payés             = sounds/pauvres.mp3
+pas assez payer             = sounds/pauvres.mp3
+pauvres                     = sounds/pauvres.mp3
+euros                       = sounds/combien.mp3
+
+# ── Prénoms & personnages ─────────────────────────────────────────
+anne                        = sounds/no.mp3
+basile                      = sounds/souffrance.mp3
+dominique                   = sounds/michel.mp3
+gérard                      = sounds/michel.mp3
+jérémy                      = sounds/souffrance.mp3
+jésus                       = sounds/jesus.mp3
+johnny                      = sounds/bac.mp3
+laurent                     = sounds/psycho.mp3
+léon                        = sounds/leon.mp3
+loïc                        = sounds/loik.mp3
+mathieu                     = sounds/matthieu.mp3
+maurice                     = sounds/maurice.mp3
+mes profs                   = sounds/demon.mp3
+michel                      = sounds/michel.mp3
+nathalie                    = sounds/nathalie.mp3
+napoleon                    = sounds/napoleon.mp3
+nicolas                     = sounds/nein.mp3
+olivier                     = sounds/olivier.mp3
+papa                        = sounds/papa.mp3
+père                        = sounds/papa.mp3
+perceval                    = sounds/chagrin.mp3
+philippe                    = sounds/philippe.mp3
+
+# ── Animaux ───────────────────────────────────────────────────────
+banane                      = sounds/banane.mp3
+banana                      = sounds/banane.mp3
+bestiole                    = sounds/bete.mp3
+canard                      = sounds/quack.mp3
+cavalier                    = sounds/cheval.mp3
+chat                        = sounds/miaou.mp3
+cheval                      = sounds/cheval.mp3
+chewbacca                   = sounds/chewbacca.mp3
+miaou                       = sounds/miaou.mp3
+mouton                      = sounds/mouton.mp3
+poilu                       = sounds/chewbacca.mp3
+poney                       = sounds/poney.mp3
+vache                       = sounds/yawn.mp3
+velu                        = sounds/chewbacca.mp3
+vainqueur                   = sounds/yeah.mp3
+
+# ── Nourriture ────────────────────────────────────────────────────
+bière                       = sounds/biere.mp3
+biscuit                     = sounds/biscuit.mp3
+biscuits                    = sounds/biscuit.mp3
+mozzarella                  = sounds/italie.mp3
+parmesan                    = sounds/italie.mp3
+patate                      = sounds/patate.mp3
+pizza                       = sounds/italie.mp3
+usine                       = sounds/biscuit.mp3
+
+# ── Jeux vidéo ────────────────────────────────────────────────────
+castlevania                 = sounds/castlevania.mp3
+dark souls                  = sounds/darksouls.mp3
+doom                        = sounds/doom.mp3
+echec                       = sounds/motus.mp3
+fc 24                       = sounds/fifa.mp3
+fc 25                       = sounds/fifa.mp3
+fc 26                       = sounds/fifa.mp3
+fifa                        = sounds/fifa.mp3
+fin de partie               = sounds/fin.mp3
+fortnite                    = sounds/robocop.mp3
+from software               = sounds/darksouls.mp3
+mario                       = sounds/mario.mp3
+massacre                    = sounds/doom.mp3
+minecraft                   = sounds/kaamelott.mp3
+mortal kombat               = sounds/mortal_kombat.mp3
+nintendo                    = sounds/nintendo.mp3
+pikachu                     = sounds/pikachu.mp3
+pokémon                     = sounds/pikachu.mp3
+playstation                 = sounds/playstation.mp3
+ps5                         = sounds/playstation.mp3
+sonic                       = sounds/sonic.mp3
+switch                      = sounds/nintendo.mp3
+villageois                  = sounds/minecraft.mp3
+warhammer                   = sounds/warhammer.mp3
+xbox                        = sounds/xbox.mp3
+yoshi                       = sounds/yoshi.mp3
+zombie                      = sounds/zombie.mp3
+
+# ── Films & séries ────────────────────────────────────────────────
+predator                    = sounds/predator.mp3
+star wars                   = sounds/star.mp3
+une autre galaxie           = sounds/xfiles.mp3
+venu d'ailleurs             = sounds/xfiles.mp3
+venus d'ailleurs            = sounds/xfiles.mp3
+
+# ── Musique ───────────────────────────────────────────────────────
+final countdown             = sounds/final_countdown.mp3
+fin de session              = sounds/final_countdown.mp3
+saxophone                   = sounds/saxophone.mp3
+barbra                      = sounds/barbra.mp3
+barbara                     = sounds/barbra.mp3
+
+# ── Histoire & politique ──────────────────────────────────────────
+chine                       = sounds/chine.mp3
+chinois                     = sounds/chinois.mp3
+communiste                  = sounds/coco.mp3
+facebook                    = sounds/facebook.mp3
+français                    = sounds/french.mp3
+frère                       = sounds/frere.mp3
+hanté                       = sounds/ghost.mp3
+hitler                      = sounds/nein.mp3
+invocation                  = sounds/lovecraft.mp3
+invoquer                    = sounds/lovecraft.mp3
+italie                      = sounds/italie.mp3
+lovecraft                   = sounds/lovecraft.mp3
+mars attack                 = sounds/mars.mp3
+microsoft                   = sounds/microsoft.mp3
+nazi                        = sounds/hitler.mp3
+nurgle                      = sounds/nurgle.mp3
+putin                       = sounds/russia.mp3
+russie                      = sounds/cnormal.mp3
+russe                       = sounds/cnormal.mp3
+samourai                    = sounds/samurai.mp3
+samouraï                    = sounds/samurai.mp3
+twitter                     = sounds/twitter.mp3
+vampire                     = sounds/castlevania.mp3
+wesh                        = sounds/wesh.mp3
+windows                     = sounds/windows.mp3
+wehrmacht                   = sounds/hitler.mp3
+
+# ── Scolaire / médiathèque ───────────────────────────────────────
+boîte à coucou              = sounds/bac.mp3
+cependant                   = sounds/cependant.mp3
+dernière minute             = sounds/countdown.mp3
+dernières minutes           = sounds/countdown.mp3
+heure de code               = sounds/hoc.mp3
+inscription                 = sounds/inscription.mp3
+inscrire                    = sounds/inscription.mp3
+la direction                = sounds/direction.mp3
+mail                        = sounds/mail.mp3
+modalité                    = sounds/modalites.mp3
+modalités                   = sounds/modalites.mp3
+normalement                 = sounds/cependant.mp3
+périmé                      = sounds/perime.mp3
+périmée                     = sounds/perime.mp3
+périmer                     = sounds/perime.mp3
+pilotage                    = sounds/pilote.mp3
+pilote                      = sounds/pilote.mp3
+planning                    = sounds/planning.mp3
+que coucou                  = sounds/bac.mp3
+rembobine                   = sounds/rewind.mp3
+rembobiner                  = sounds/rewind.mp3
+rembobines                  = sounds/rewind.mp3
+réserver                    = sounds/resa.mp3
+spotify                     = sounds/staying.mp3
+
+# ── Divers / fun ─────────────────────────────────────────────────
+bébé                        = sounds/chapi.mp3
+bête                        = sounds/bete.mp3
+bisou                       = sounds/bisou.mp3
+bisous                      = sounds/bisou.mp3
+c'est nul                   = sounds/nul0.mp3
+calimero                    = sounds/calimero.mp3
+jouet                       = sounds/toy.mp3
+kaamelott                   = sounds/kaamelott.mp3
+mignon                      = sounds/mignon.mp3
+neige                       = sounds/neige.mp3
+pourri                      = sounds/pourri.mp3
+pouvoir                     = sounds/pouvoir.mp3
