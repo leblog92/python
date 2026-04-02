@@ -1,3 +1,7 @@
+Microsoft Windows [version 10.0.26200.8037]
+(c) Microsoft Corporation. Tous droits réservés.
+
+C:\Users\MKLEIN\Documents\GitHub\python\ear>tree /f
 Structure du dossier pour le volume Windows
 Le numéro de série du volume est EA32-05A5
 C:.
@@ -7,10 +11,8 @@ C:.
 ¦   keywords.txt
 ¦   launch_ear.bat
 ¦   launch_ear.vbs
-¦   server.py
 ¦   tree.txt
-¦   web_server.py
-¦   
+¦
 +---apps
 ¦       auda.lnk
 ¦       audio.bat
@@ -28,7 +30,7 @@ C:.
 ¦       restart.bat
 ¦       spo.lnk
 ¦       video.bat
-¦       
+¦
 +---meteo
 ¦   ¦   .env
 ¦   ¦   .gitignore
@@ -41,155 +43,170 @@ C:.
 ¦   ¦   requirements.txt
 ¦   ¦   tts_service.py
 ¦   ¦   weather_service.py
-¦   ¦   
+¦   ¦
 ¦   +---__pycache__
 ¦           config.cpython-313.pyc
 ¦           tts_service.cpython-313.pyc
 ¦           weather_service.cpython-313.pyc
-¦           
+¦
 +---sounds
-¦   ¦   alarme.mp3
-¦   ¦   assistante.mp3
-¦   ¦   au_revoir.mp3
-¦   ¦   bac.mp3
-¦   ¦   banane.mp3
-¦   ¦   barbra.mp3
-¦   ¦   bete.mp3
-¦   ¦   biere.mp3
-¦   ¦   biscuit.mp3
-¦   ¦   bisou.mp3
-¦   ¦   bonjour.mp3
-¦   ¦   bye.mp3
-¦   ¦   calimero.mp3
-¦   ¦   castlevania.mp3
-¦   ¦   cependant.mp3
-¦   ¦   chagrin.mp3
-¦   ¦   cheval.mp3
-¦   ¦   chewbacca.mp3
-¦   ¦   chine.mp3
-¦   ¦   ciao.mp3
-¦   ¦   clang.mp3
-¦   ¦   cnormal.mp3
-¦   ¦   cnul.mp3
-¦   ¦   coco.mp3
-¦   ¦   coucou.mp3
-¦   ¦   countdown.mp3
-¦   ¦   darksouls.mp3
-¦   ¦   debile.mp3
-¦   ¦   demon.mp3
-¦   ¦   direction.mp3
-¦   ¦   doom.mp3
-¦   ¦   enerve.mp3
-¦   ¦   erreur.mp3
-¦   ¦   expire.mp3
-¦   ¦   facebook.mp3
-¦   ¦   faim.mp3
-¦   ¦   fifa.mp3
-¦   ¦   fin.mp3
-¦   ¦   final_countdown.mp3
-¦   ¦   french.mp3
-¦   ¦   frere.mp3
-¦   ¦   ghost.mp3
-¦   ¦   goodbye.mp3
-¦   ¦   greve.mp3
-¦   ¦   hello.mp3
-¦   ¦   hitler.mp3
-¦   ¦   hoc.mp3
-¦   ¦   inscription.mp3
-¦   ¦   italie.mp3
-¦   ¦   jesus.mp3
-¦   ¦   kaamelott.mp3
-¦   ¦   leon.mp3
-¦   ¦   loik.mp3
-¦   ¦   lovecraft.mp3
-¦   ¦   malheur.mp3
-¦   ¦   mario.mp3
-¦   ¦   marre.mp3
-¦   ¦   mars.mp3
-¦   ¦   matraque.mp3
-¦   ¦   matthieu.mp3
-¦   ¦   maurice.mp3
-¦   ¦   mb.mp3
-¦   ¦   merci.mp3
-¦   ¦   miaou.mp3
-¦   ¦   michel.mp3
-¦   ¦   microsoft.mp3
-¦   ¦   mignon.mp3
-¦   ¦   minecraft.mp3
-¦   ¦   modalites.mp3
-¦   ¦   mortal_kombat.mp3
-¦   ¦   motus.mp3
-¦   ¦   mouton.mp3
-¦   ¦   nathalie.mp3
-¦   ¦   neige.mp3
-¦   ¦   nein.mp3
-¦   ¦   nelson.mp3
-¦   ¦   new-year.mp3
-¦   ¦   nintendo.mp3
-¦   ¦   no.mp3
-¦   ¦   nono.mp3
-¦   ¦   nul0.mp3
-¦   ¦   nurgle.mp3
-¦   ¦   oh.mp3
-¦   ¦   olivier.mp3
-¦   ¦   papa.mp3
-¦   ¦   pasfaux.mp3
-¦   ¦   pauvres.mp3
-¦   ¦   penible.mp3
-¦   ¦   perime.mp3
-¦   ¦   pete.mp3
-¦   ¦   philippe.mp3
-¦   ¦   pikachu.mp3
-¦   ¦   pilote.mp3
-¦   ¦   planning.mp3
-¦   ¦   playstation.mp3
-¦   ¦   pleurer.mp3
-¦   ¦   poney.mp3
-¦   ¦   pourri.mp3
-¦   ¦   predator.mp3
-¦   ¦   problem.mp3
-¦   ¦   psycho.mp3
-¦   ¦   quack.mp3
-¦   ¦   resa.mp3
-¦   ¦   rewind.mp3
-¦   ¦   robocop.mp3
-¦   ¦   romantique.mp3
-¦   ¦   russia.mp3
-¦   ¦   samurai.mp3
-¦   ¦   saxophone.mp3
-¦   ¦   shock.mp3
-¦   ¦   solitude.mp3
-¦   ¦   sonic.mp3
-¦   ¦   souffrance.mp3
-¦   ¦   souffrir.mp3
-¦   ¦   star.mp3
-¦   ¦   staying.mp3
-¦   ¦   suffisant.mp3
-¦   ¦   super.mp3
-¦   ¦   terminator.mp3
-¦   ¦   thx.mp3
-¦   ¦   toy.mp3
-¦   ¦   twitter.mp3
-¦   ¦   urgence.mp3
-¦   ¦   virus.mp3
-¦   ¦   vomir.mp3
-¦   ¦   vous_ne_passerez_pas.mp3
-¦   ¦   vrai.mp3
-¦   ¦   warhammer.mp3
-¦   ¦   wesh.mp3
-¦   ¦   wesh.old.mp3
-¦   ¦   windows.mp3
-¦   ¦   xbox.mp3
-¦   ¦   xfiles.mp3
-¦   ¦   yeah.mp3
-¦   ¦   yoshi.mp3
-¦   ¦   zombie.mp3
-¦   ¦   
-¦   +---2do
-¦           aime.mp3
-¦           insulte.mp3
-¦           surveillez.mp3
-¦           
-+---__pycache__
-        ear_gui.cpython-313.pyc
-        
+    ¦   aide.mp3
+    ¦   alarme.mp3
+    ¦   AlbumArtSmall.jpg
+    ¦   assistante.mp3
+    ¦   assistante2.mp3
+    ¦   attendre.mp3
+    ¦   au_revoir.mp3
+    ¦   au_revoir2.mp3
+    ¦   bac.mp3
+    ¦   banane.mp3
+    ¦   barbra.mp3
+    ¦   bete.mp3
+    ¦   biere.mp3
+    ¦   biscuit.mp3
+    ¦   bisou.mp3
+    ¦   bizarre.mp3
+    ¦   bonjour.mp3
+    ¦   bye.mp3
+    ¦   calimero.mp3
+    ¦   castlevania.mp3
+    ¦   cependant.mp3
+    ¦   chagrin.mp3
+    ¦   chapi.mp3
+    ¦   chaud.mp3
+    ¦   cheval.mp3
+    ¦   chewbacca.mp3
+    ¦   chine.mp3
+    ¦   ciao.mp3
+    ¦   clang.mp3
+    ¦   cnormal.mp3
+    ¦   cnul.mp3
+    ¦   coco.mp3
+    ¦   combien.mp3
+    ¦   coucou.mp3
+    ¦   countdown.mp3
+    ¦   courage.mp3
+    ¦   cow.mp3
+    ¦   darksouls.mp3
+    ¦   debile.mp3
+    ¦   demon.mp3
+    ¦   direction.mp3
+    ¦   doom.mp3
+    ¦   enerve.mp3
+    ¦   erreur.mp3
+    ¦   expire.mp3
+    ¦   facebook.mp3
+    ¦   faim.mp3
+    ¦   fifa.mp3
+    ¦   fin.mp3
+    ¦   final_countdown.mp3
+    ¦   Folder.jpg
+    ¦   french.mp3
+    ¦   frere.mp3
+    ¦   ghost.mp3
+    ¦   goodbye.mp3
+    ¦   greve.mp3
+    ¦   hello.mp3
+    ¦   hitler.mp3
+    ¦   hoc.mp3
+    ¦   inscription.mp3
+    ¦   italie.mp3
+    ¦   jesus.mp3
+    ¦   kaamelott.mp3
+    ¦   leon.mp3
+    ¦   loik.mp3
+    ¦   lovecraft.mp3
+    ¦   mail.mp3
+    ¦   malheur.mp3
+    ¦   mario.mp3
+    ¦   marre.mp3
+    ¦   mars.mp3
+    ¦   matraque.mp3
+    ¦   matthieu.mp3
+    ¦   maurice.mp3
+    ¦   mb.mp3
+    ¦   merci.mp3
+    ¦   merci2.mp3
+    ¦   miaou.mp3
+    ¦   michel.mp3
+    ¦   microsoft.mp3
+    ¦   mignon.mp3
+    ¦   minecraft.mp3
+    ¦   modalites.mp3
+    ¦   mortal_kombat.mp3
+    ¦   motus.mp3
+    ¦   mouton.mp3
+    ¦   napoleon.mp3
+    ¦   nathalie.mp3
+    ¦   necro.mp3
+    ¦   neige.mp3
+    ¦   nein.mp3
+    ¦   nelson.mp3
+    ¦   new-year.mp3
+    ¦   nintendo.mp3
+    ¦   no.mp3
+    ¦   nono.mp3
+    ¦   nul0.mp3
+    ¦   nurgle.mp3
+    ¦   oh.mp3
+    ¦   olivier.mp3
+    ¦   papa.mp3
+    ¦   pasfaux.mp3
+    ¦   pauvres.mp3
+    ¦   penible.mp3
+    ¦   perime.mp3
+    ¦   pete.mp3
+    ¦   pikachu.mp3
+    ¦   pilote.mp3
+    ¦   planning.mp3
+    ¦   playstation.mp3
+    ¦   pleurer.mp3
+    ¦   poney.mp3
+    ¦   pourri.mp3
+    ¦   pouvoir.mp3
+    ¦   predator.mp3
+    ¦   problem.mp3
+    ¦   psycho.mp3
+    ¦   quack.mp3
+    ¦   resa.mp3
+    ¦   rewind.mp3
+    ¦   robocop.mp3
+    ¦   romantique.mp3
+    ¦   russia.mp3
+    ¦   samurai.mp3
+    ¦   saxophone.mp3
+    ¦   shock.mp3
+    ¦   solitude.mp3
+    ¦   sonic.mp3
+    ¦   souffrance.mp3
+    ¦   souffrir.mp3
+    ¦   star.mp3
+    ¦   staying.mp3
+    ¦   suffisant.mp3
+    ¦   super.mp3
+    ¦   terminator.mp3
+    ¦   thx.mp3
+    ¦   toy.mp3
+    ¦   turret.mp3
+    ¦   twitter.mp3
+    ¦   urgence.mp3
+    ¦   virus.mp3
+    ¦   vomir.mp3
+    ¦   vous_ne_passerez_pas.mp3
+    ¦   vrai.mp3
+    ¦   warhammer.mp3
+    ¦   wesh.mp3
+    ¦   wesh.old.mp3
+    ¦   windows.mp3
+    ¦   xbox.mp3
+    ¦   xfiles.mp3
+    ¦   yawn.mp3
+    ¦   yeah.mp3
+    ¦   yoshi.mp3
+    ¦   zeb.mp3
+    ¦   zombie.mp3
+    ¦
+    +---2do
+            aime.mp3
+            insulte.mp3
+            surveillez.mp3
