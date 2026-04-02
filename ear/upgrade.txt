@@ -1,0 +1,2 @@
+gestion fenêtre
+arreter la lecture d'un son lancé
