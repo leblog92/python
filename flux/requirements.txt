@@ -4,3 +4,4 @@ numpy
 pyttsx3
 pygame
 sounddevice
+edge-tts
