@@ -11,74 +11,8 @@ import subprocess
 import threading
 import pyttsx3
 import pygame
-import sounddevice as sd
-import queue
-import base64
-import json
-import struct
 
 app = flask.Flask(__name__)
-
-# ─────────────────────────────────────────────
-#  DIFFUSION AUDIO EN TEMPS RÉEL (SSE)
-#  Capture le loopback audio (stéréo mix / what-u-hear)
-#  et le diffuse aux clients web via Server-Sent Events.
-# ─────────────────────────────────────────────
-AUDIO_SAMPLERATE = 22050   # Hz (qualité raisonnable, débit réduit)
-AUDIO_CHANNELS   = 1       # Mono
-AUDIO_CHUNK      = 2048    # Échantillons par trame (~93 ms)
-
-audio_clients      = []      # liste de queues, une par client SSE
-audio_clients_lock = threading.Lock()
-
-def _audio_callback(indata, frames, time_info, status):
-    """Appelé par sounddevice pour chaque bloc capturé."""
-    if status:
-        print(f"[AUDIO-STREAM] {status}")
-    # Convertir en PCM 16-bit little-endian
-    pcm = (indata * 32767).astype(np.int16).tobytes()
-    b64 = base64.b64encode(pcm).decode('ascii')
-    payload = f"data: {b64}\n\n"
-    with audio_clients_lock:
-        dead = []
-        for q in audio_clients:
-            try:
-                q.put_nowait(payload)
-            except queue.Full:
-                dead.append(q)
-        for q in dead:
-            audio_clients.remove(q)
-
-def _start_audio_stream():
-    """Démarre la capture audio en arrière-plan (loopback si disponible)."""
-    try:
-        # Chercher un périphérique loopback (Stéréo Mix, WASAPI loopback…)
-        devices = sd.query_devices()
-        loopback_idx = None
-        for i, d in enumerate(devices):
-            name = d['name'].lower()
-            if d['max_input_channels'] > 0 and any(k in name for k in
-                    ['stereo mix', 'stéréo mix', 'what u hear', 'wave out mix',
-                     'loopback', 'mixage stéréo', 'sum']):
-                loopback_idx = i
-                print(f"[AUDIO-STREAM] Périphérique loopback trouvé : {d['name']} (idx {i})")
-                break
-
-        device_idx = loopback_idx  # None = micro par défaut si pas de loopback
-
-        stream = sd.InputStream(
-            device=device_idx,
-            samplerate=AUDIO_SAMPLERATE,
-            channels=AUDIO_CHANNELS,
-            dtype='float32',
-            blocksize=AUDIO_CHUNK,
-            callback=_audio_callback,
-        )
-        stream.start()
-        print("[AUDIO-STREAM] Capture audio démarrée.")
-    except Exception as e:
-        print(f"[AUDIO-STREAM] Impossible de démarrer la capture : {e}")
-        print("[AUDIO-STREAM] Installez sounddevice : pip install sounddevice --break-system-packages")
 
 # ─────────────────────────────────────────────
 #  TTS ENGINE (pyttsx3 – moteur Windows SAPI5)
@@ -432,44 +366,7 @@ def stop_audio():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-
-# ── Flux audio SSE ────────────────────────────
-@app.route('/audio_stream')
-def audio_stream():
-    """
-    Server-Sent Events : envoie les trames PCM base64 aux clients web.
-    Le navigateur décode et joue via Web Audio API.
-    """
-    q = queue.Queue(maxsize=30)
-    with audio_clients_lock:
-        audio_clients.append(q)
-
-    def generate():
-        # Envoyer la config en premier événement
-        cfg = json.dumps({"sampleRate": AUDIO_SAMPLERATE, "channels": AUDIO_CHANNELS})
-        yield f"event: config\ndata: {cfg}\n\n"
-        try:
-            while True:
-                try:
-                    chunk = q.get(timeout=5)
-                    yield chunk
-                except queue.Empty:
-                    yield ": keepalive\n\n"
-        except GeneratorExit:
-            pass
-        finally:
-            with audio_clients_lock:
-                if q in audio_clients:
-                    audio_clients.remove(q)
-
-    return Response(generate(),
-                    mimetype='text/event-stream',
-                    headers={
-                        'Cache-Control': 'no-cache',
-                        'X-Accel-Buffering': 'no',
-                    })
-
-
+# ── Interface de contrôle principale ──────────
 @app.route('/')
 def index():
     ip = get_local_ip()
@@ -637,27 +534,6 @@ def index():
       <div class="quick-btns" id="quickBtns"></div>
     </div>
 
-    <!-- Écoute en direct -->
-    <div class="card">
-      <h2>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
-        Écoute en direct
-      </h2>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <div id="audioIndicator" style="width:10px;height:10px;border-radius:50%;background:#444;flex-shrink:0;transition:background .15s"></div>
-        <span id="audioStatus" style="font-size:.82rem;color:var(--muted)">Non connecté</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <label style="font-size:.82rem;color:var(--muted);white-space:nowrap">Volume</label>
-        <input type="range" id="listenVolume" min="0" max="2" step="0.05" value="1"
-               style="flex:1;accent-color:var(--accent)">
-        <span id="volLabel" style="font-size:.78rem;color:var(--muted);width:32px;text-align:right">100%</span>
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-primary" id="btnListen" onclick="toggleListen()">🎧 Écouter</button>
-      </div>
-    </div>
-
     <!-- Upload MP3 -->
     <div class="card">
       <h2>
@@ -690,99 +566,6 @@ def index():
 
 <script>
 const SERVER = 'http://{ip}:5000';
-
-// ── Écoute audio en direct (Web Audio API + SSE) ────
-let audioCtx = null;
-let audioSource = null;
-let gainNode = null;
-let audioSSE = null;
-let listening = false;
-let audioSampleRate = 22050;
-let audioChannels = 1;
-let audioQueue = [];
-let audioScheduledTime = 0;
-
-document.getElementById('listenVolume').addEventListener('input', function() {{
-  const pct = Math.round(this.value * 100);
-  document.getElementById('volLabel').textContent = pct + '%';
-  if (gainNode) gainNode.gain.value = parseFloat(this.value);
-}});
-
-function setAudioStatus(text, color) {{
-  document.getElementById('audioStatus').textContent = text;
-  document.getElementById('audioIndicator').style.background = color;
-}}
-
-function toggleListen() {{
-  if (listening) {{
-    stopListen();
-  }} else {{
-    startListen();
-  }}
-}}
-
-function startListen() {{
-  if (listening) return;
-  listening = true;
-  document.getElementById('btnListen').textContent = '⏹ Arrêter';
-  document.getElementById('btnListen').className = 'btn btn-danger';
-  setAudioStatus('Connexion…', '#f0a500');
-
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate: audioSampleRate }});
-  gainNode = audioCtx.createGain();
-  gainNode.gain.value = parseFloat(document.getElementById('listenVolume').value);
-  gainNode.connect(audioCtx.destination);
-  audioScheduledTime = audioCtx.currentTime + 0.2;
-
-  audioSSE = new EventSource(SERVER + '/audio_stream');
-
-  audioSSE.addEventListener('config', e => {{
-    const cfg = JSON.parse(e.data);
-    audioSampleRate = cfg.sampleRate;
-    audioChannels = cfg.channels;
-    setAudioStatus('🔴 En écoute', '#3ecf8e');
-  }});
-
-  audioSSE.onmessage = e => {{
-    if (!audioCtx || !gainNode) return;
-    try {{
-      const raw = atob(e.data);
-      const pcm16 = new Int16Array(raw.length / 2);
-      for (let i = 0; i < pcm16.length; i++) {{
-        pcm16[i] = (raw.charCodeAt(i*2)) | (raw.charCodeAt(i*2+1) << 8);
-      }}
-      const float32 = new Float32Array(pcm16.length);
-      for (let i = 0; i < pcm16.length; i++) {{
-        float32[i] = pcm16[i] / 32768.0;
-      }}
-      const buf = audioCtx.createBuffer(1, float32.length, audioSampleRate);
-      buf.copyToChannel(float32, 0);
-      const src = audioCtx.createBufferSource();
-      src.buffer = buf;
-      src.connect(gainNode);
-      const now = audioCtx.currentTime;
-      if (audioScheduledTime < now) audioScheduledTime = now + 0.05;
-      src.start(audioScheduledTime);
-      audioScheduledTime += buf.duration;
-    }} catch(err) {{
-      console.warn('Audio decode error:', err);
-    }}
-  }};
-
-  audioSSE.onerror = () => {{
-    if (listening) setAudioStatus('Reconnexion…', '#e35b5b');
-  }};
-}}
-
-function stopListen() {{
-  listening = false;
-  if (audioSSE) {{ audioSSE.close(); audioSSE = null; }}
-  if (audioCtx) {{ audioCtx.close(); audioCtx = null; gainNode = null; }}
-  audioScheduledTime = 0;
-  document.getElementById('btnListen').textContent = '🎧 Écouter';
-  document.getElementById('btnListen').className = 'btn btn-primary';
-  setAudioStatus('Non connecté', '#444');
-}}
 
 // ── Flux vidéo ──────────────────────────────
 const feed = document.getElementById('videoFeed');
@@ -921,7 +704,6 @@ loadMP3List();
 if __name__ == '__main__':
     print("=== LOGITECH C270 - SURVEILLANCE HD ===")
     print("Démarrage du serveur...")
-    _start_audio_stream()
     save_html_file()
     ip_address = get_local_ip()
     print(f"\n  Interface de contrôle : http://{ip_address}:5000")
