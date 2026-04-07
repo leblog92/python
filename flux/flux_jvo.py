@@ -24,19 +24,24 @@ app = flask.Flask(__name__)
 #  Capture le loopback audio (stéréo mix / what-u-hear)
 #  et le diffuse aux clients web via Server-Sent Events.
 # ─────────────────────────────────────────────
-AUDIO_SAMPLERATE = 22050   # Hz (qualité raisonnable, débit réduit)
+# ─────────────────────────────────────────────
+#  DIFFUSION AUDIO EN TEMPS RÉEL (SSE)
+#  Capture le micro de la salle (Logitech C270 en priorité,
+#  sinon le micro par défaut) et le diffuse aux clients web
+#  via Server-Sent Events + Web Audio API.
+# ─────────────────────────────────────────────
+AUDIO_SAMPLERATE = 16000   # Hz — suffisant pour la voix, faible latence
 AUDIO_CHANNELS   = 1       # Mono
-AUDIO_CHUNK      = 2048    # Échantillons par trame (~93 ms)
+AUDIO_CHUNK      = 1024    # ~64 ms par trame
 
-audio_clients      = []      # liste de queues, une par client SSE
+audio_clients      = []
 audio_clients_lock = threading.Lock()
 
 def _audio_callback(indata, frames, time_info, status):
-    """Appelé par sounddevice pour chaque bloc capturé."""
+    """Reçoit chaque bloc micro et le pousse vers tous les clients SSE."""
     if status:
-        print(f"[AUDIO-STREAM] {status}")
-    # Convertir en PCM 16-bit little-endian
-    pcm = (indata * 32767).astype(np.int16).tobytes()
+        print(f"[MICRO] {status}")
+    pcm = (indata[:, 0] * 32767).astype(np.int16).tobytes()
     b64 = base64.b64encode(pcm).decode('ascii')
     payload = f"data: {b64}\n\n"
     with audio_clients_lock:
@@ -49,23 +54,38 @@ def _audio_callback(indata, frames, time_info, status):
         for q in dead:
             audio_clients.remove(q)
 
+def _find_mic_device():
+    """
+    Cherche le meilleur micro disponible dans cet ordre :
+      1. Micro de la Logitech C270 (ou toute webcam Logitech)
+      2. Tout autre micro USB
+      3. Micro par defaut du systeme (None)
+    """
+    devices = sd.query_devices()
+    print("\n[MICRO] Peripheriques d'entree disponibles :")
+    for i, d in enumerate(devices):
+        if d['max_input_channels'] > 0:
+            print(f"  [{i}] {d['name']}  (ch={d['max_input_channels']}, sr={int(d['default_samplerate'])})")
+
+    for i, d in enumerate(devices):
+        name = d['name'].lower()
+        if d['max_input_channels'] > 0 and ('logitech' in name or 'c920' in name or 'webcam' in name):
+            print(f"[MICRO] Logitech C920 trouvee : {d['name']} (idx {i})")
+            return i
+
+    for i, d in enumerate(devices):
+        name = d['name'].lower()
+        if d['max_input_channels'] > 0 and 'usb' in name:
+            print(f"[MICRO] Micro USB trouve : {d['name']} (idx {i})")
+            return i
+
+    print("[MICRO] Aucun micro USB/Logitech trouve, utilisation du micro par defaut.")
+    return None
+
 def _start_audio_stream():
-    """Démarre la capture audio en arrière-plan (loopback si disponible)."""
+    """Demarre la capture micro en arriere-plan."""
     try:
-        # Chercher un périphérique loopback (Stéréo Mix, WASAPI loopback…)
-        devices = sd.query_devices()
-        loopback_idx = None
-        for i, d in enumerate(devices):
-            name = d['name'].lower()
-            if d['max_input_channels'] > 0 and any(k in name for k in
-                    ['stereo mix', 'stéréo mix', 'what u hear', 'wave out mix',
-                     'loopback', 'mixage stéréo', 'sum']):
-                loopback_idx = i
-                print(f"[AUDIO-STREAM] Périphérique loopback trouvé : {d['name']} (idx {i})")
-                break
-
-        device_idx = loopback_idx  # None = micro par défaut si pas de loopback
-
+        device_idx = _find_mic_device()
         stream = sd.InputStream(
             device=device_idx,
             samplerate=AUDIO_SAMPLERATE,
@@ -75,10 +95,10 @@ def _start_audio_stream():
             callback=_audio_callback,
         )
         stream.start()
-        print("[AUDIO-STREAM] Capture audio démarrée.")
+        print(f"[MICRO] Capture demarree ({AUDIO_SAMPLERATE} Hz, chunk={AUDIO_CHUNK})\n")
     except Exception as e:
-        print(f"[AUDIO-STREAM] Impossible de démarrer la capture : {e}")
-        print("[AUDIO-STREAM] Installez sounddevice : pip install sounddevice --break-system-packages")
+        print(f"[MICRO] Impossible de demarrer : {e}")
+        print("[MICRO]   -> pip install sounddevice --break-system-packages")
 
 # ─────────────────────────────────────────────
 #  TTS ENGINE (pyttsx3 – moteur Windows SAPI5)
@@ -160,7 +180,7 @@ class RobustCamera:
             for _ in range(5):
                 success, frame = self.cap.read()
                 if success and frame is not None:
-                    print("✓ Caméra initialisée avec succès")
+                    print("✓ Caméra C920 initialisée avec succès")
                     return True
                 time.sleep(0.1)
             print("✗ Caméra ouverte mais ne renvoie pas d'image")
@@ -691,16 +711,14 @@ def index():
 <script>
 const SERVER = 'http://{ip}:5000';
 
-// ── Écoute audio en direct (Web Audio API + SSE) ────
-let audioCtx = null;
-let audioSource = null;
-let gainNode = null;
-let audioSSE = null;
-let listening = false;
-let audioSampleRate = 22050;
-let audioChannels = 1;
-let audioQueue = [];
-let audioScheduledTime = 0;
+// ── Écoute micro en direct (Web Audio API + SSE) ─────
+let audioCtx    = null;
+let gainNode    = null;
+let audioSSE    = null;
+let listening   = false;
+let sampleRate  = 16000;
+let nextTime    = 0;          // horloge de planification
+const AHEAD_SEC = 0.10;       // buffer d'anticipation (100 ms)
 
 document.getElementById('listenVolume').addEventListener('input', function() {{
   const pct = Math.round(this.value * 100);
@@ -714,11 +732,7 @@ function setAudioStatus(text, color) {{
 }}
 
 function toggleListen() {{
-  if (listening) {{
-    stopListen();
-  }} else {{
-    startListen();
-  }}
+  listening ? stopListen() : startListen();
 }}
 
 function startListen() {{
@@ -726,59 +740,73 @@ function startListen() {{
   listening = true;
   document.getElementById('btnListen').textContent = '⏹ Arrêter';
   document.getElementById('btnListen').className = 'btn btn-danger';
-  setAudioStatus('Connexion…', '#f0a500');
+  setAudioStatus('Connexion au micro…', '#f0a500');
 
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate: audioSampleRate }});
+  // Créer le contexte audio avec le bon sample rate
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate }});
   gainNode = audioCtx.createGain();
   gainNode.gain.value = parseFloat(document.getElementById('listenVolume').value);
   gainNode.connect(audioCtx.destination);
-  audioScheduledTime = audioCtx.currentTime + 0.2;
+  nextTime = audioCtx.currentTime + AHEAD_SEC;
 
   audioSSE = new EventSource(SERVER + '/audio_stream');
 
+  // Premier événement : config (sampleRate)
   audioSSE.addEventListener('config', e => {{
     const cfg = JSON.parse(e.data);
-    audioSampleRate = cfg.sampleRate;
-    audioChannels = cfg.channels;
-    setAudioStatus('🔴 En écoute', '#3ecf8e');
+    sampleRate = cfg.sampleRate;
+    // Recréer le contexte si le sample rate diffère
+    if (audioCtx.sampleRate !== sampleRate) {{
+      audioCtx.close();
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate }});
+      gainNode = audioCtx.createGain();
+      gainNode.gain.value = parseFloat(document.getElementById('listenVolume').value);
+      gainNode.connect(audioCtx.destination);
+      nextTime = audioCtx.currentTime + AHEAD_SEC;
+    }}
+    setAudioStatus('🔴 Micro en direct', '#3ecf8e');
   }});
 
+  // Chaque trame PCM base64
   audioSSE.onmessage = e => {{
     if (!audioCtx || !gainNode) return;
     try {{
-      const raw = atob(e.data);
-      const pcm16 = new Int16Array(raw.length / 2);
-      for (let i = 0; i < pcm16.length; i++) {{
-        pcm16[i] = (raw.charCodeAt(i*2)) | (raw.charCodeAt(i*2+1) << 8);
-      }}
+      // Décoder base64 → ArrayBuffer
+      const binStr = atob(e.data);
+      const bytes  = new Uint8Array(binStr.length);
+      for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+
+      // PCM int16 little-endian → float32
+      const pcm16   = new Int16Array(bytes.buffer);
       const float32 = new Float32Array(pcm16.length);
-      for (let i = 0; i < pcm16.length; i++) {{
-        float32[i] = pcm16[i] / 32768.0;
-      }}
-      const buf = audioCtx.createBuffer(1, float32.length, audioSampleRate);
+      for (let i = 0; i < pcm16.length; i++) float32[i] = pcm16[i] / 32768.0;
+
+      // Créer un AudioBuffer et le planifier
+      const buf = audioCtx.createBuffer(1, float32.length, sampleRate);
       buf.copyToChannel(float32, 0);
       const src = audioCtx.createBufferSource();
       src.buffer = buf;
       src.connect(gainNode);
+
       const now = audioCtx.currentTime;
-      if (audioScheduledTime < now) audioScheduledTime = now + 0.05;
-      src.start(audioScheduledTime);
-      audioScheduledTime += buf.duration;
+      if (nextTime < now + 0.01) nextTime = now + AHEAD_SEC; // rattrapage si retard
+      src.start(nextTime);
+      nextTime += buf.duration;
     }} catch(err) {{
-      console.warn('Audio decode error:', err);
+      console.warn('[Audio] decode error:', err);
     }}
   }};
 
   audioSSE.onerror = () => {{
-    if (listening) setAudioStatus('Reconnexion…', '#e35b5b');
+    if (listening) setAudioStatus('⚠ Reconnexion…', '#e35b5b');
   }};
 }}
 
 function stopListen() {{
   listening = false;
-  if (audioSSE) {{ audioSSE.close(); audioSSE = null; }}
-  if (audioCtx) {{ audioCtx.close(); audioCtx = null; gainNode = null; }}
-  audioScheduledTime = 0;
+  if (audioSSE)  {{ audioSSE.close();  audioSSE = null; }}
+  if (audioCtx)  {{ audioCtx.close();  audioCtx = null; gainNode = null; }}
+  nextTime = 0;
   document.getElementById('btnListen').textContent = '🎧 Écouter';
   document.getElementById('btnListen').className = 'btn btn-primary';
   setAudioStatus('Non connecté', '#444');
@@ -919,7 +947,7 @@ loadMP3List();
 #  MAIN
 # ─────────────────────────────────────────────
 if __name__ == '__main__':
-    print("=== LOGITECH C270 - SURVEILLANCE HD ===")
+    print("=== LOGITECH C920 - SURVEILLANCE HD ===")
     print("Démarrage du serveur...")
     _start_audio_stream()
     save_html_file()
