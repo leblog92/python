@@ -6,7 +6,7 @@ import os
 import time
 import socket
 import getpass
-from flask import Response, request, jsonify
+from flask import Response, request, jsonify, stream_with_context
 import subprocess
 import threading
 import pyttsx3
@@ -30,9 +30,9 @@ app = flask.Flask(__name__)
 #  sinon le micro par défaut) et le diffuse aux clients web
 #  via Server-Sent Events + Web Audio API.
 # ─────────────────────────────────────────────
-AUDIO_SAMPLERATE = 16000   # Hz — suffisant pour la voix, faible latence
+AUDIO_SAMPLERATE = 44100   # Hz — taux natif de la C920
 AUDIO_CHANNELS   = 1       # Mono
-AUDIO_CHUNK      = 1024    # ~64 ms par trame
+AUDIO_CHUNK      = 4096    # ~93 ms par trame à 44100 Hz
 
 audio_clients      = []
 audio_clients_lock = threading.Lock()
@@ -67,6 +67,15 @@ def _find_mic_device():
         if d['max_input_channels'] > 0:
             print(f"  [{i}] {d['name']}  (ch={d['max_input_channels']}, sr={int(d['default_samplerate'])})")
 
+    # Priorité 1 : C920 à 44100 Hz (entrée native)
+    for i, d in enumerate(devices):
+        name = d['name'].lower()
+        if d['max_input_channels'] > 0 and ('logitech' in name or 'c920' in name or 'webcam' in name):
+            if int(d['default_samplerate']) == 44100:
+                print(f"[MICRO] Logitech C920 trouvee (44100 Hz) : {d['name']} (idx {i})")
+                return i
+
+    # Priorité 2 : C920 à n'importe quel taux
     for i, d in enumerate(devices):
         name = d['name'].lower()
         if d['max_input_channels'] > 0 and ('logitech' in name or 'c920' in name or 'webcam' in name):
@@ -460,12 +469,12 @@ def audio_stream():
     Server-Sent Events : envoie les trames PCM base64 aux clients web.
     Le navigateur décode et joue via Web Audio API.
     """
-    q = queue.Queue(maxsize=30)
+    q = queue.Queue(maxsize=60)
     with audio_clients_lock:
         audio_clients.append(q)
 
+    @stream_with_context
     def generate():
-        # Envoyer la config en premier événement
         cfg = json.dumps({"sampleRate": AUDIO_SAMPLERATE, "channels": AUDIO_CHANNELS})
         yield f"event: config\ndata: {cfg}\n\n"
         try:
@@ -482,12 +491,16 @@ def audio_stream():
                 if q in audio_clients:
                     audio_clients.remove(q)
 
-    return Response(generate(),
-                    mimetype='text/event-stream',
-                    headers={
-                        'Cache-Control': 'no-cache',
-                        'X-Accel-Buffering': 'no',
-                    })
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache, no-store',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+        }
+    )
 
 
 @app.route('/')
@@ -716,7 +729,7 @@ let audioCtx    = null;
 let gainNode    = null;
 let audioSSE    = null;
 let listening   = false;
-let sampleRate  = 16000;
+let sampleRate  = 44100;
 let nextTime    = 0;          // horloge de planification
 const AHEAD_SEC = 0.10;       // buffer d'anticipation (100 ms)
 
