@@ -16,6 +16,33 @@ import queue
 import base64
 import json
 import struct
+import logging
+import traceback
+import sys
+
+# ─────────────────────────────────────────────
+#  SYSTÈME DE LOGS
+#  Écrit dans la console ET dans jvo_debug.log
+#  (dans le même dossier que ce script)
+# ─────────────────────────────────────────────
+LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jvo_debug.log")
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding="utf-8", mode="w"),  # écrase à chaque démarrage
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+log = logging.getLogger("JVO")
+log.info(f"=== Démarrage — logs dans : {LOG_FILE} ===")
+
+# Intercepte toutes les exceptions non catchées
+def _handle_uncaught(exc_type, exc_value, exc_tb):
+    log.critical("EXCEPTION NON CATCHÉE !", exc_info=(exc_type, exc_value, exc_tb))
+sys.excepthook = _handle_uncaught
 
 app = flask.Flask(__name__)
 
@@ -93,8 +120,10 @@ def _find_mic_device():
 
 def _start_audio_stream():
     """Demarre la capture micro en arriere-plan."""
+    log.info("[AUDIO] Démarrage du flux audio...")
     try:
         device_idx = _find_mic_device()
+        log.info(f"[AUDIO] Périphérique sélectionné : index={device_idx}")
         stream = sd.InputStream(
             device=device_idx,
             samplerate=AUDIO_SAMPLERATE,
@@ -104,10 +133,10 @@ def _start_audio_stream():
             callback=_audio_callback,
         )
         stream.start()
-        print(f"[MICRO] Capture demarree ({AUDIO_SAMPLERATE} Hz, chunk={AUDIO_CHUNK})\n")
+        log.info(f"[AUDIO] Capture démarrée ({AUDIO_SAMPLERATE} Hz, chunk={AUDIO_CHUNK})")
     except Exception as e:
-        print(f"[MICRO] Impossible de demarrer : {e}")
-        print("[MICRO]   -> pip install sounddevice --break-system-packages")
+        log.error(f"[AUDIO] Impossible de démarrer : {e}")
+        log.debug(traceback.format_exc())
 
 # ─────────────────────────────────────────────
 #  TTS ENGINE (pyttsx3 – moteur Windows SAPI5)
@@ -164,20 +193,25 @@ class RobustCamera:
     def __init__(self):
         self.cap = None
         self.backend = cv2.CAP_DSHOW
+        self._lock = threading.Lock()  # FIX: empêche les race conditions multi-threads
         self.init_camera()
 
     def init_camera(self):
+        log.info("[CAM] init_camera() appelé")
         if self.cap is not None:
+            log.debug("[CAM] Libération du cap existant")
             self.cap.release()
             time.sleep(1)
         try:
+            log.debug("[CAM] Tentative VideoCapture(0, CAP_DSHOW)")
             self.cap = cv2.VideoCapture(0, self.backend)
             if not self.cap.isOpened():
-                print("Tentative avec backend par défaut...")
+                log.warning("[CAM] CAP_DSHOW échoué, tentative backend par défaut...")
                 self.cap = cv2.VideoCapture(0)
             if not self.cap.isOpened():
-                print("ERREUR: Impossible d'ouvrir la caméra")
+                log.error("[CAM] ERREUR: Impossible d'ouvrir la caméra (index 0)")
                 return False
+            log.debug("[CAM] Caméra ouverte, configuration en cours...")
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
             self.cap.set(cv2.CAP_PROP_FPS, 25)
@@ -186,32 +220,40 @@ class RobustCamera:
             except:
                 pass
             self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
-            for _ in range(5):
+            for attempt in range(5):
                 success, frame = self.cap.read()
                 if success and frame is not None:
-                    print("✓ Caméra C920 initialisée avec succès")
+                    log.info(f"[CAM] ✓ Caméra initialisée avec succès (tentative {attempt+1}), shape={frame.shape}")
                     return True
+                log.debug(f"[CAM] Tentative {attempt+1}/5 de lecture échouée")
                 time.sleep(0.1)
-            print("✗ Caméra ouverte mais ne renvoie pas d'image")
+            log.error("[CAM] ✗ Caméra ouverte mais ne renvoie pas d'image après 5 tentatives")
             return False
         except Exception as e:
-            print(f"ERREUR initialisation caméra: {e}")
+            log.error(f"[CAM] ERREUR initialisation caméra: {e}")
+            log.debug(traceback.format_exc())
             return False
 
     def read(self):
-        if self.cap is None:
-            if not self.init_camera():
+        with self._lock:  # FIX: verrou pour éviter les accès concurrents
+            if self.cap is None:
+                log.warning("[CAM] cap=None, réinitialisation...")
+                if not self.init_camera():
+                    log.error("[CAM] Réinitialisation échouée dans read()")
+                    return False, None
+            try:
+                success, frame = self.cap.read()
+                if not success or frame is None:
+                    log.warning("[CAM] cap.read() a retourné échec, tentative de récupération...")
+                    self.init_camera()
+                    success, frame = self.cap.read() if self.cap else (False, None)
+                    if not success:
+                        log.error("[CAM] Récupération échouée, retourne frame vide")
+                return success, frame
+            except Exception as e:
+                log.error(f"[CAM] Exception dans read(): {type(e).__name__}: {e}")
+                log.debug(traceback.format_exc())
                 return False, None
-        try:
-            success, frame = self.cap.read()
-            if not success or frame is None:
-                print("Tentative de récupération de la caméra...")
-                self.init_camera()
-                success, frame = self.cap.read() if self.cap else (False, None)
-            return success, frame
-        except Exception as e:
-            print(f"ERREUR lecture: {e}")
-            return False, None
 
 
 def get_local_ip():
@@ -278,7 +320,7 @@ def save_html_file():
 camera = RobustCamera()
 motion_detected = False
 last_frame = None
-motion_threshold = 500
+motion_threshold = 2000
 capture_count = 0
 MAX_CAPTURES = 100
 
@@ -343,33 +385,59 @@ def generate_frames():
     global motion_detected
     motion_cooldown = 0
     frame_count = 0
+    log.info("[STREAM] generate_frames() démarré")
     while True:
-        success, frame = camera.read()
-        if not success or frame is None:
-            frame = np.zeros((480, 640, 3), dtype=np.uint8)
-            cv2.putText(frame, "CAMERA ERROR - RECONNECTION...", (50, 240),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        else:
-            frame_count += 1
-            if frame_count % 2 == 0:
-                motion_detected, frame = detect_motion(frame)
-                if motion_detected and motion_cooldown == 0:
-                    save_capture(frame)
-                    motion_cooldown = 15
-            if motion_cooldown > 0:
-                motion_cooldown -= 1
-        stream_frame = cv2.resize(frame, (960, 540))
-        ret, buffer = cv2.imencode('.jpg', stream_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        if ret:
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-        else:
-            error_frame = np.zeros((540, 960, 3), dtype=np.uint8)
-            cv2.putText(error_frame, "ENCODING ERROR", (300, 270),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-            _, buffer = cv2.imencode('.jpg', error_frame)
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+        try:
+            success, frame = camera.read()
+            if not success or frame is None:
+                log.warning(f"[STREAM] frame #{frame_count} — caméra indisponible, frame noire envoyée")
+                frame = np.zeros((480, 640, 3), dtype=np.uint8)
+                cv2.putText(frame, "CAMERA ERROR - RECONNECTION...", (50, 240),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            else:
+                frame_count += 1
+                if frame_count % 100 == 0:
+                    log.debug(f"[STREAM] ✓ {frame_count} frames envoyées, shape={frame.shape}")
+                if frame_count % 2 == 0:
+                    motion_detected, frame = detect_motion(frame)
+                    if motion_detected and motion_cooldown == 0:
+                        log.info("[STREAM] Mouvement détecté — capture sauvegardée")
+                        save_capture(frame)
+                        motion_cooldown = 15
+                if motion_cooldown > 0:
+                    motion_cooldown -= 1
+            stream_frame = cv2.resize(frame, (960, 540))
+            ret, buffer = cv2.imencode('.jpg', stream_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            if ret:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            else:
+                log.error(f"[STREAM] cv2.imencode() a échoué à la frame #{frame_count}")
+                error_frame = np.zeros((540, 960, 3), dtype=np.uint8)
+                cv2.putText(error_frame, "ENCODING ERROR", (300, 270),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                _, buffer = cv2.imencode('.jpg', error_frame)
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+        except GeneratorExit:
+            log.info(f"[STREAM] Client déconnecté après {frame_count} frames (GeneratorExit normal)")
+            break
+        except Exception as e:
+            log.error(f"[STREAM] Exception à la frame #{frame_count}: {type(e).__name__}: {e}")
+            log.debug(traceback.format_exc())
+            time.sleep(0.5)
+            try:
+                error_frame = np.zeros((540, 960, 3), dtype=np.uint8)
+                cv2.putText(error_frame, "STREAM ERROR - RECOVERING...", (200, 270),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2)
+                _, buffer = cv2.imencode('.jpg', error_frame)
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            except GeneratorExit:
+                log.info("[STREAM] GeneratorExit pendant récupération, arrêt propre")
+                break
+            except Exception as e2:
+                log.error(f"[STREAM] Erreur lors de l'envoi de la frame d'erreur: {e2}")
 
 
 # ─────────────────────────────────────────────
@@ -378,7 +446,16 @@ def generate_frames():
 
 @app.route('/video_feed')
 def video_feed():
-    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    client_ip = request.remote_addr
+    log.info(f"[HTTP] GET /video_feed — client={client_ip}")
+    try:
+        resp = Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+        log.info(f"[HTTP] Response objet créé pour {client_ip}, démarrage du stream")
+        return resp
+    except Exception as e:
+        log.error(f"[HTTP] Erreur création Response /video_feed: {e}")
+        log.debug(traceback.format_exc())
+        return Response("Erreur serveur", status=500)
 
 
 # ── TTS ──────────────────────────────────────
@@ -960,8 +1037,9 @@ loadMP3List();
 #  MAIN
 # ─────────────────────────────────────────────
 if __name__ == '__main__':
-    print("=== LOGITECH C920 - SURVEILLANCE HD ===")
-    print("Démarrage du serveur...")
+    log.info("=== LOGITECH C920 - SURVEILLANCE HD ===")
+    log.info(f"Fichier de log : {LOG_FILE}")
+    log.info("Démarrage du serveur...")
     _start_audio_stream()
     save_html_file()
     ip_address = get_local_ip()
