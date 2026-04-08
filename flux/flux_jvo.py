@@ -139,29 +139,82 @@ def _start_audio_stream():
         log.debug(traceback.format_exc())
 
 # ─────────────────────────────────────────────
-#  TTS ENGINE (pyttsx3 – moteur Windows SAPI5)
+#  TTS ENGINE
+#  Priorité 1 : edge-tts  (voix neuronale Microsoft Edge, pip install edge-tts)
+#               Voix : fr-FR-DeniseNeural (femme) ou fr-FR-HenriNeural (homme)
+#               Requiert une connexion internet, aucun droit admin.
+#  Priorité 2 : pyttsx3   (SAPI5 Windows, fallback hors-ligne automatique)
 # ─────────────────────────────────────────────
 tts_lock = threading.Lock()
 
+EDGE_TTS_VOICE = "fr-FR-DeniseNeural"   # changer en "fr-FR-HenriNeural" pour voix masculine
+_edge_tts_ok   = False
+
+def _check_edge_tts():
+    global _edge_tts_ok
+    try:
+        import edge_tts
+        _edge_tts_ok = True
+        log.info(f"[TTS] ✓ edge-tts disponible — voix : {EDGE_TTS_VOICE}")
+    except ImportError:
+        log.warning("[TTS] edge-tts introuvable — fallback pyttsx3 (SAPI5)")
+
+threading.Thread(target=_check_edge_tts, daemon=True).start()
+
+
+def _speak_edge(text: str):
+    """Synthèse via edge-tts → WAV temporaire → pygame."""
+    import asyncio, tempfile, edge_tts
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+        tmp_path = f.name
+    async def _generate():
+        communicate = edge_tts.Communicate(text, EDGE_TTS_VOICE)
+        await communicate.save(tmp_path)
+    try:
+        asyncio.run(_generate())
+        with audio_lock:
+            pygame.mixer.music.load(tmp_path)
+            pygame.mixer.music.play()
+            while pygame.mixer.music.get_busy():
+                time.sleep(0.05)
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+
+def _speak_sapi5(text: str):
+    """Fallback pyttsx3 / SAPI5 Windows."""
+    try:
+        engine = pyttsx3.init()
+        engine.setProperty('rate', 160)
+        engine.setProperty('volume', 1.0)
+        voices = engine.getProperty('voices')
+        for v in voices:
+            if 'french' in v.name.lower() or 'fr_' in v.id.lower() or 'hortense' in v.name.lower():
+                engine.setProperty('voice', v.id)
+                break
+        engine.say(text)
+        engine.runAndWait()
+        engine.stop()
+    except Exception as e:
+        log.error(f"[TTS] Erreur SAPI5 : {e}")
+
+
 def speak_text(text: str):
-    """Lit le texte via le moteur TTS Windows (SAPI5) dans un thread dédié."""
+    """Point d'entrée unique : utilise edge-tts si disponible, sinon SAPI5."""
     def _run():
         with tts_lock:
-            try:
-                engine = pyttsx3.init()
-                engine.setProperty('rate', 160)   # vitesse (mots/min)
-                engine.setProperty('volume', 1.0) # volume max
-                # Choisir une voix française si disponible
-                voices = engine.getProperty('voices')
-                for v in voices:
-                    if 'french' in v.name.lower() or 'fr_' in v.id.lower() or 'hortense' in v.name.lower():
-                        engine.setProperty('voice', v.id)
-                        break
-                engine.say(text)
-                engine.runAndWait()
-                engine.stop()
-            except Exception as e:
-                print(f"Erreur TTS: {e}")
+            if _edge_tts_ok:
+                log.info(f"[TTS/Edge] ← {text}")
+                try:
+                    _speak_edge(text)
+                    return
+                except Exception as e:
+                    log.warning(f"[TTS/Edge] Erreur ({e}), bascule sur SAPI5")
+            log.info(f"[TTS/SAPI5] ← {text}")
+            _speak_sapi5(text)
     threading.Thread(target=_run, daemon=True).start()
 
 # ─────────────────────────────────────────────
@@ -320,7 +373,7 @@ def save_html_file():
 camera = RobustCamera()
 motion_detected = False
 last_frame = None
-motion_threshold = 2000
+motion_threshold = 500
 capture_count = 0
 MAX_CAPTURES = 100
 
