@@ -998,7 +998,7 @@ const QUICK_PHRASES = [
   'Un membre du personnel va arriver dans quelques instants. Veuillez patienter.',
   'Vous pouvez vous installer dans la salle.',
   'Attention, la salle fermera dans quelques minutes !',
-  'Les jeux disponibles sur place présentés sur le panneau.',
+  'Les jeux disponibles sur place sont indiqués sur le panneau.',
 ];
 function buildQuickBtns() {{
   const c = document.getElementById('quickBtns');
