@@ -64,22 +64,38 @@ AUDIO_CHUNK      = 4096    # ~93 ms par trame à 44100 Hz
 audio_clients      = []
 audio_clients_lock = threading.Lock()
 
+# ─────────────────────────────────────────────
+#  QUALITÉ VIDÉO — modifiable à chaud via /set_quality
+# ─────────────────────────────────────────────
+QUALITY_PRESETS = {
+    "hd":     {"res": (960, 540), "jpeg": 80, "fps_div": 1, "label": "HD  960×540 q80 ~13 Mbit/s"},
+    "medium": {"res": (640, 360), "jpeg": 65, "fps_div": 1, "label": "Moyen 640×360 q65 ~4 Mbit/s"},
+    "low":    {"res": (480, 270), "jpeg": 50, "fps_div": 2, "label": "Eco  480×270 q50 ~1 Mbit/s"},
+}
+stream_quality = "medium"   # défaut économique
+
 def _audio_callback(indata, frames, time_info, status):
-    """Reçoit chaque bloc micro et le pousse vers tous les clients SSE."""
+    """Recoit chaque bloc micro et le pousse vers tous les clients SSE.
+    IMPORTANT : pas d'allocation lourde ici - thread temps-reel."""
     if status:
-        print(f"[MICRO] {status}")
-    pcm = (indata[:, 0] * 32767).astype(np.int16).tobytes()
-    b64 = base64.b64encode(pcm).decode('ascii')
-    payload = f"data: {b64}\n\n"
-    with audio_clients_lock:
-        dead = []
-        for q in audio_clients:
-            try:
-                q.put_nowait(payload)
-            except queue.Full:
-                dead.append(q)
-        for q in dead:
-            audio_clients.remove(q)
+        log.warning(f"[MICRO] sounddevice status : {status}")
+    try:
+        # Copie rapide du canal mono avant que le buffer ne soit recycle
+        mono = indata[:, 0].copy()
+        pcm  = (mono * 32767).astype(np.int16).tobytes()
+        b64  = base64.b64encode(pcm).decode('ascii')
+        payload = f"data: {b64}\n\n"
+        with audio_clients_lock:
+            dead = []
+            for q in audio_clients:
+                try:
+                    q.put_nowait(payload)
+                except queue.Full:
+                    dead.append(q)
+            for q in dead:
+                audio_clients.remove(q)
+    except Exception as e:
+        log.warning(f"[MICRO] callback error : {e}")
 
 def _find_mic_device():
     """
@@ -139,82 +155,29 @@ def _start_audio_stream():
         log.debug(traceback.format_exc())
 
 # ─────────────────────────────────────────────
-#  TTS ENGINE
-#  Priorité 1 : edge-tts  (voix neuronale Microsoft Edge, pip install edge-tts)
-#               Voix : fr-FR-DeniseNeural (femme) ou fr-FR-HenriNeural (homme)
-#               Requiert une connexion internet, aucun droit admin.
-#  Priorité 2 : pyttsx3   (SAPI5 Windows, fallback hors-ligne automatique)
+#  TTS ENGINE (pyttsx3 – moteur Windows SAPI5)
 # ─────────────────────────────────────────────
 tts_lock = threading.Lock()
 
-EDGE_TTS_VOICE = "fr-FR-DeniseNeural"   # changer en "fr-FR-HenriNeural" pour voix masculine
-_edge_tts_ok   = False
-
-def _check_edge_tts():
-    global _edge_tts_ok
-    try:
-        import edge_tts
-        _edge_tts_ok = True
-        log.info(f"[TTS] ✓ edge-tts disponible — voix : {EDGE_TTS_VOICE}")
-    except ImportError:
-        log.warning("[TTS] edge-tts introuvable — fallback pyttsx3 (SAPI5)")
-
-threading.Thread(target=_check_edge_tts, daemon=True).start()
-
-
-def _speak_edge(text: str):
-    """Synthèse via edge-tts → WAV temporaire → pygame."""
-    import asyncio, tempfile, edge_tts
-    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-        tmp_path = f.name
-    async def _generate():
-        communicate = edge_tts.Communicate(text, EDGE_TTS_VOICE)
-        await communicate.save(tmp_path)
-    try:
-        asyncio.run(_generate())
-        with audio_lock:
-            pygame.mixer.music.load(tmp_path)
-            pygame.mixer.music.play()
-            while pygame.mixer.music.get_busy():
-                time.sleep(0.05)
-    finally:
-        try:
-            os.remove(tmp_path)
-        except Exception:
-            pass
-
-
-def _speak_sapi5(text: str):
-    """Fallback pyttsx3 / SAPI5 Windows."""
-    try:
-        engine = pyttsx3.init()
-        engine.setProperty('rate', 160)
-        engine.setProperty('volume', 1.0)
-        voices = engine.getProperty('voices')
-        for v in voices:
-            if 'french' in v.name.lower() or 'fr_' in v.id.lower() or 'hortense' in v.name.lower():
-                engine.setProperty('voice', v.id)
-                break
-        engine.say(text)
-        engine.runAndWait()
-        engine.stop()
-    except Exception as e:
-        log.error(f"[TTS] Erreur SAPI5 : {e}")
-
-
 def speak_text(text: str):
-    """Point d'entrée unique : utilise edge-tts si disponible, sinon SAPI5."""
+    """Lit le texte via le moteur TTS Windows (SAPI5) dans un thread dédié."""
     def _run():
         with tts_lock:
-            if _edge_tts_ok:
-                log.info(f"[TTS/Edge] ← {text}")
-                try:
-                    _speak_edge(text)
-                    return
-                except Exception as e:
-                    log.warning(f"[TTS/Edge] Erreur ({e}), bascule sur SAPI5")
-            log.info(f"[TTS/SAPI5] ← {text}")
-            _speak_sapi5(text)
+            try:
+                engine = pyttsx3.init()
+                engine.setProperty('rate', 160)   # vitesse (mots/min)
+                engine.setProperty('volume', 1.0) # volume max
+                # Choisir une voix française si disponible
+                voices = engine.getProperty('voices')
+                for v in voices:
+                    if 'french' in v.name.lower() or 'fr_' in v.id.lower() or 'hortense' in v.name.lower():
+                        engine.setProperty('voice', v.id)
+                        break
+                engine.say(text)
+                engine.runAndWait()
+                engine.stop()
+            except Exception as e:
+                print(f"Erreur TTS: {e}")
     threading.Thread(target=_run, daemon=True).start()
 
 # ─────────────────────────────────────────────
@@ -373,7 +336,7 @@ def save_html_file():
 camera = RobustCamera()
 motion_detected = False
 last_frame = None
-motion_threshold = 500
+motion_threshold = 1500
 capture_count = 0
 MAX_CAPTURES = 100
 
@@ -382,28 +345,42 @@ motion_captures_dir = os.path.join(user_profile, 'Pictures', 'motion_captures')
 os.makedirs(motion_captures_dir, exist_ok=True)
 
 
-def save_capture(frame):
+_capture_queue = queue.Queue(maxsize=10)
+
+def _capture_writer():
+    """Thread dedié ecriture captures disque - n'a jamais bloqué le stream."""
     global capture_count
-    if capture_count >= MAX_CAPTURES:
+    while True:
         try:
-            files = sorted(os.listdir(motion_captures_dir))
-            if len(files) > MAX_CAPTURES:
-                for old_file in files[:len(files) - MAX_CAPTURES]:
-                    os.remove(os.path.join(motion_captures_dir, old_file))
-                capture_count = MAX_CAPTURES
+            frame, timestamp = _capture_queue.get()
+            if capture_count >= MAX_CAPTURES:
+                try:
+                    files = sorted(os.listdir(motion_captures_dir))
+                    for old_file in files[:max(0, len(files) - MAX_CAPTURES + 1)]:
+                        os.remove(os.path.join(motion_captures_dir, old_file))
+                    capture_count = max(0, capture_count - 1)
+                except Exception as e:
+                    log.warning(f"[CAPTURE] Nettoyage : {e}")
+            filename  = f"motion_{timestamp}.jpg"
+            file_path = os.path.join(motion_captures_dir, filename)
+            small = cv2.resize(frame, (640, 360))
+            cv2.imwrite(file_path, small, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            capture_count += 1
+            log.debug(f"[CAPTURE] Sauvegarde : {filename}")
         except Exception as e:
-            print(f"Erreur nettoyage: {e}")
+            log.error(f"[CAPTURE] Erreur ecriture : {e}")
+
+threading.Thread(target=_capture_writer, daemon=True).start()
+
+
+def save_capture(frame):
+    """Enfile la capture pour ecriture asynchrone - ne bloque jamais le stream."""
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    filename = f"motion_{timestamp}.jpg"
-    file_path = os.path.join(motion_captures_dir, filename)
     try:
-        cv2.imwrite(file_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
-        capture_count += 1
-        print(f"Capture: {file_path}")
-        return file_path
-    except Exception as e:
-        print(f"Erreur capture: {e}")
-        return None
+        _capture_queue.put_nowait((frame.copy(), timestamp))
+    except queue.Full:
+        log.warning("[CAPTURE] File pleine, capture ignoree")
+    return None
 
 
 def detect_motion(current_frame):
@@ -456,11 +433,15 @@ def generate_frames():
                     if motion_detected and motion_cooldown == 0:
                         log.info("[STREAM] Mouvement détecté — capture sauvegardée")
                         save_capture(frame)
-                        motion_cooldown = 15
+                        motion_cooldown = 30
                 if motion_cooldown > 0:
                     motion_cooldown -= 1
-            stream_frame = cv2.resize(frame, (960, 540))
-            ret, buffer = cv2.imencode('.jpg', stream_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            q      = QUALITY_PRESETS[stream_quality]
+            # Limite fps selon le preset (fps_div=2 → on saute 1 frame sur 2)
+            if frame_count % q["fps_div"] != 0:
+                continue
+            stream_frame = cv2.resize(frame, q["res"])
+            ret, buffer = cv2.imencode('.jpg', stream_frame, [cv2.IMWRITE_JPEG_QUALITY, q["jpeg"]])
             if ret:
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
@@ -590,6 +571,23 @@ def stop_audio():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
+
+# ── Qualité vidéo ────────────────────────────
+@app.route('/set_quality', methods=['POST'])
+def set_quality():
+    global stream_quality
+    data = request.get_json(silent=True) or {}
+    q = data.get('quality', '').strip()
+    if q not in QUALITY_PRESETS:
+        return jsonify({"status": "error", "message": f"Valeur inconnue : {q}"}), 400
+    stream_quality = q
+    log.info(f"[STREAM] Qualité changée → {QUALITY_PRESETS[q]['label']}")
+    return jsonify({"status": "ok", "quality": q, "label": QUALITY_PRESETS[q]["label"]})
+
+@app.route('/get_quality')
+def get_quality():
+    return jsonify({"quality": stream_quality, "label": QUALITY_PRESETS[stream_quality]["label"]})
 
 
 # ── Flux audio SSE ────────────────────────────
@@ -778,6 +776,20 @@ def index():
   <!-- Panneau de contrôle -->
   <div class="ctrl-panel">
 
+    <!-- Qualité vidéo -->
+    <div class="card">
+      <h2>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        Qualité vidéo
+      </h2>
+      <div class="btn-row" id="qualityBtns">
+        <button class="btn btn-ghost" id="q-hd"     onclick="setQuality('hd')">HD</button>
+        <button class="btn btn-success" id="q-medium" onclick="setQuality('medium')">Moyen</button>
+        <button class="btn btn-ghost" id="q-low"   onclick="setQuality('low')">Éco</button>
+      </div>
+      <div style="margin-top:8px;font-size:.78rem;color:var(--muted)" id="qualityLabel">640×360 · ~4 Mbit/s</div>
+    </div>
+
     <!-- TTS -->
     <div class="card">
       <h2>
@@ -955,6 +967,45 @@ function stopListen() {{
   setAudioStatus('Non connecté', '#444');
 }}
 
+// ── Qualité vidéo ────────────────────────────
+const QUALITY_LABELS = {{
+  hd:     'HD 960×540 · ~13 Mbit/s',
+  medium: 'Moyen 640×360 · ~4 Mbit/s',
+  low:    'Éco 480×270 · ~1 Mbit/s',
+}};
+
+async function setQuality(q) {{
+  try {{
+    const r = await fetch(SERVER + '/set_quality', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{quality: q}})
+    }});
+    const d = await r.json();
+    if (d.status === 'ok') {{
+      ['hd','medium','low'].forEach(k => {{
+        document.getElementById('q-' + k).className =
+          'btn ' + (k === q ? 'btn-success' : 'btn-ghost');
+      }});
+      document.getElementById('qualityLabel').textContent = QUALITY_LABELS[q];
+      toast('✓ Qualité : ' + QUALITY_LABELS[q]);
+    }}
+  }} catch(e) {{ toast('Erreur qualité', 'err'); }}
+}}
+
+// Charger la qualité courante au démarrage
+(async () => {{
+  try {{
+    const r = await fetch(SERVER + '/get_quality');
+    const d = await r.json();
+    ['hd','medium','low'].forEach(k => {{
+      document.getElementById('q-' + k).className =
+        'btn ' + (k === d.quality ? 'btn-success' : 'btn-ghost');
+    }});
+    document.getElementById('qualityLabel').textContent = QUALITY_LABELS[d.quality] || d.label;
+  }} catch(e) {{}}
+}})();
+
 // ── Flux vidéo ──────────────────────────────
 const feed = document.getElementById('videoFeed');
 feed.onerror = () => {{ feed.src = SERVER + '/video_feed?t=' + Date.now(); }};
@@ -996,9 +1047,9 @@ document.getElementById('ttsText').addEventListener('keydown', e => {{
 const QUICK_PHRASES = [
   'Bonjour, bienvenue dans la salle jeux vidéo.',
   'Un membre du personnel va arriver dans quelques instants. Veuillez patienter.',
-  'Vous pouvez vous installer dans la salle.',
+  'Vous pouvez vous installer dans la salle du fond.',
   'Attention, la salle fermera dans quelques minutes !',
-  'Les jeux disponibles sur place sont indiqués sur le panneau.',
+  'Vous pouvez consulter les jeux disponibles sur place sur le panneau.',
 ];
 function buildQuickBtns() {{
   const c = document.getElementById('quickBtns');
