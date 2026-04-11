@@ -3,11 +3,12 @@ import flask
 import numpy as np
 import datetime
 import os
+from pathlib import Path
 import time
 import socket
 import getpass
 from flask import Response, request, jsonify, stream_with_context
-import subprocess
+import webbrowser
 import threading
 import pyttsx3
 import pygame
@@ -134,25 +135,52 @@ def _find_mic_device():
     print("[MICRO] Aucun micro USB/Logitech trouve, utilisation du micro par defaut.")
     return None
 
-def _start_audio_stream():
-    """Demarre la capture micro en arriere-plan."""
-    log.info("[AUDIO] Démarrage du flux audio...")
-    try:
-        device_idx = _find_mic_device()
-        log.info(f"[AUDIO] Périphérique sélectionné : index={device_idx}")
-        stream = sd.InputStream(
-            device=device_idx,
-            samplerate=AUDIO_SAMPLERATE,
-            channels=AUDIO_CHANNELS,
-            dtype='float32',
-            blocksize=AUDIO_CHUNK,
-            callback=_audio_callback,
-        )
-        stream.start()
-        log.info(f"[AUDIO] Capture démarrée ({AUDIO_SAMPLERATE} Hz, chunk={AUDIO_CHUNK})")
-    except Exception as e:
-        log.error(f"[AUDIO] Impossible de démarrer : {e}")
-        log.debug(traceback.format_exc())
+_mic_stream     = None   # instance sd.InputStream active
+_mic_stream_lock = threading.Lock()
+mic_active      = False  # état courant
+
+def mic_start():
+    """Ouvre le micro et démarre la capture. Appelé uniquement à la demande."""
+    global _mic_stream, mic_active
+    with _mic_stream_lock:
+        if mic_active:
+            return True  # déjà actif
+        try:
+            device_idx = _find_mic_device()
+            log.info(f"[MICRO] Ouverture micro (idx={device_idx}, {AUDIO_SAMPLERATE} Hz)…")
+            _mic_stream = sd.InputStream(
+                device=device_idx,
+                samplerate=AUDIO_SAMPLERATE,
+                channels=AUDIO_CHANNELS,
+                dtype='float32',
+                blocksize=AUDIO_CHUNK,
+                callback=_audio_callback,
+            )
+            _mic_stream.start()
+            mic_active = True
+            log.info("[MICRO] ✓ Micro ouvert")
+            return True
+        except Exception as e:
+            log.error(f"[MICRO] Impossible d'ouvrir : {e}")
+            _mic_stream = None
+            mic_active  = False
+            return False
+
+def mic_stop():
+    """Ferme le micro et libère la ressource."""
+    global _mic_stream, mic_active
+    with _mic_stream_lock:
+        if not mic_active or _mic_stream is None:
+            return
+        try:
+            _mic_stream.stop()
+            _mic_stream.close()
+            log.info("[MICRO] Micro fermé")
+        except Exception as e:
+            log.warning(f"[MICRO] Erreur fermeture : {e}")
+        finally:
+            _mic_stream = None
+            mic_active  = False
 
 # ─────────────────────────────────────────────
 #  TTS ENGINE (pyttsx3 – moteur Windows SAPI5)
@@ -324,7 +352,7 @@ def save_html_file():
 
     # Ouvrir directement l'interface Flask dans le navigateur
     try:
-        subprocess.Popen(f'start "" "{server_url}"', shell=True)
+        webbrowser.open(server_url)
         print(f"Navigateur ouvert sur {server_url}")
     except Exception as e:
         print(f"Impossible d'ouvrir le navigateur : {e}")
@@ -339,6 +367,7 @@ last_frame = None
 motion_threshold = 1500
 capture_count = 0
 MAX_CAPTURES = 100
+SAVE_CAPTURES = False   # désactivé par défaut pour réduire l'activité fichier suspecte
 
 user_profile = os.environ.get('USERPROFILE', os.path.expanduser('~'))
 motion_captures_dir = os.path.join(user_profile, 'Pictures', 'motion_captures')
@@ -357,7 +386,7 @@ def _capture_writer():
                 try:
                     files = sorted(os.listdir(motion_captures_dir))
                     for old_file in files[:max(0, len(files) - MAX_CAPTURES + 1)]:
-                        os.remove(os.path.join(motion_captures_dir, old_file))
+                        Path(os.path.join(motion_captures_dir, old_file)).unlink(missing_ok=True)
                     capture_count = max(0, capture_count - 1)
                 except Exception as e:
                     log.warning(f"[CAPTURE] Nettoyage : {e}")
@@ -431,8 +460,9 @@ def generate_frames():
                 if frame_count % 2 == 0:
                     motion_detected, frame = detect_motion(frame)
                     if motion_detected and motion_cooldown == 0:
-                        log.info("[STREAM] Mouvement détecté — capture sauvegardée")
-                        save_capture(frame)
+                        if SAVE_CAPTURES:
+                            log.info("[STREAM] Mouvement détecté — capture sauvegardée")
+                            save_capture(frame)
                         motion_cooldown = 30
                 if motion_cooldown > 0:
                     motion_cooldown -= 1
@@ -573,6 +603,20 @@ def stop_audio():
 
 
 
+# ── Captures mouvement ───────────────────────
+@app.route('/set_captures', methods=['POST'])
+def set_captures():
+    global SAVE_CAPTURES
+    data = request.get_json(silent=True) or {}
+    SAVE_CAPTURES = bool(data.get('enabled', False))
+    log.info(f"[CAPTURE] Sauvegarde {'activée' if SAVE_CAPTURES else 'désactivée'}")
+    return jsonify({"status": "ok", "enabled": SAVE_CAPTURES})
+
+@app.route('/get_captures')
+def get_captures():
+    return jsonify({"enabled": SAVE_CAPTURES})
+
+
 # ── Qualité vidéo ────────────────────────────
 @app.route('/set_quality', methods=['POST'])
 def set_quality():
@@ -588,6 +632,22 @@ def set_quality():
 @app.route('/get_quality')
 def get_quality():
     return jsonify({"quality": stream_quality, "label": QUALITY_PRESETS[stream_quality]["label"]})
+
+
+# ── Contrôle micro (start/stop à la demande) ─
+@app.route('/mic_start', methods=['POST'])
+def route_mic_start():
+    ok = mic_start()
+    return jsonify({"status": "ok" if ok else "error", "active": mic_active})
+
+@app.route('/mic_stop', methods=['POST'])
+def route_mic_stop():
+    mic_stop()
+    return jsonify({"status": "ok", "active": False})
+
+@app.route('/mic_status')
+def route_mic_status():
+    return jsonify({"active": mic_active})
 
 
 # ── Flux audio SSE ────────────────────────────
@@ -776,6 +836,26 @@ def index():
   <!-- Panneau de contrôle -->
   <div class="ctrl-panel">
 
+    <!-- Captures mouvement -->
+    <div class="card">
+      <h2>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+        Captures mouvement
+      </h2>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:.82rem;color:var(--muted)" id="captureStatus">Désactivées</span>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <div id="captureToggle" onclick="toggleCaptures()"
+               style="width:36px;height:20px;border-radius:10px;background:#333;
+                      position:relative;cursor:pointer;transition:background .2s">
+            <div id="captureThumb"
+                 style="width:16px;height:16px;border-radius:50%;background:#888;
+                        position:absolute;top:2px;left:2px;transition:all .2s"></div>
+          </div>
+        </label>
+      </div>
+    </div>
+
     <!-- Qualité vidéo -->
     <div class="card">
       <h2>
@@ -895,7 +975,9 @@ function startListen() {{
   listening = true;
   document.getElementById('btnListen').textContent = '⏹ Arrêter';
   document.getElementById('btnListen').className = 'btn btn-danger';
-  setAudioStatus('Connexion au micro…', '#f0a500');
+  setAudioStatus('Ouverture du micro…', '#f0a500');
+  // Demander au serveur d'ouvrir le micro avant de connecter le SSE
+  fetch(SERVER + '/mic_start', {{method:'POST'}}).catch(()=>{{}});
 
   // Créer le contexte audio avec le bon sample rate
   audioCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate }});
@@ -962,9 +1044,39 @@ function stopListen() {{
   if (audioSSE)  {{ audioSSE.close();  audioSSE = null; }}
   if (audioCtx)  {{ audioCtx.close();  audioCtx = null; gainNode = null; }}
   nextTime = 0;
+  // Fermer le micro côté serveur
+  fetch(SERVER + '/mic_stop', {{method:'POST'}}).catch(()=>{{}});
   document.getElementById('btnListen').textContent = '🎧 Écouter';
   document.getElementById('btnListen').className = 'btn btn-primary';
-  setAudioStatus('Non connecté', '#444');
+  setAudioStatus('Micro fermé', '#444');
+}}
+
+// ── Captures mouvement ──────────────────────
+let capturesEnabled = false;
+async function toggleCaptures() {{
+  capturesEnabled = !capturesEnabled;
+  try {{
+    await fetch(SERVER + '/set_captures', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{enabled: capturesEnabled}})
+    }});
+    const tog   = document.getElementById('captureToggle');
+    const thumb = document.getElementById('captureThumb');
+    const label = document.getElementById('captureStatus');
+    if (capturesEnabled) {{
+      tog.style.background   = 'var(--accent2)';
+      thumb.style.left       = '18px';
+      thumb.style.background = '#fff';
+      label.textContent      = 'Activées';
+    }} else {{
+      tog.style.background   = '#333';
+      thumb.style.left       = '2px';
+      thumb.style.background = '#888';
+      label.textContent      = 'Désactivées';
+    }}
+    toast(capturesEnabled ? '✓ Captures activées' : 'Captures désactivées');
+  }} catch(e) {{ toast('Erreur', 'err'); }}
 }}
 
 // ── Qualité vidéo ────────────────────────────
@@ -1144,7 +1256,7 @@ if __name__ == '__main__':
     log.info("=== LOGITECH C920 - SURVEILLANCE HD ===")
     log.info(f"Fichier de log : {LOG_FILE}")
     log.info("Démarrage du serveur...")
-    _start_audio_stream()
+    log.info("[MICRO] Micro en veille — s'active à la demande via le bouton Écouter")
     save_html_file()
     ip_address = get_local_ip()
     print(f"\n  Interface de contrôle : http://{ip_address}:5000")
