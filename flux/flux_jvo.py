@@ -190,23 +190,6 @@ def mic_stop():
 # ─────────────────────────────────────────────
 tts_lock       = threading.Lock()
 EDGE_TTS_VOICE = "fr-FR-DeniseNeural"
-_edge_tts_ok   = False
-_edge_tts_ready = threading.Event()   # signalé quand la vérification est terminée
-
-def _check_edge_tts():
-    global _edge_tts_ok
-    try:
-        import edge_tts  # noqa
-        _edge_tts_ok = True
-        log.info(f"[TTS] edge-tts disponible — voix : {EDGE_TTS_VOICE}")
-    except ImportError:
-        _edge_tts_ok = False
-        log.warning("[TTS] edge-tts introuvable (pip install edge-tts) — fallback pyttsx3 actif")
-    finally:
-        _edge_tts_ready.set()   # libère speak_text quel que soit le résultat
-
-threading.Thread(target=_check_edge_tts, daemon=True).start()
-
 
 def _speak_edge(text: str):
     import asyncio, tempfile, edge_tts
@@ -224,40 +207,15 @@ def _speak_edge(text: str):
     finally:
         Path(tmp).unlink(missing_ok=True)
 
-
-def _speak_sapi5(text: str):
-    try:
-        engine = pyttsx3.init()
-        engine.setProperty('rate', 160)
-        engine.setProperty('volume', 1.0)
-        for v in engine.getProperty('voices'):
-            if 'french' in v.name.lower() or 'fr_' in v.id.lower() or 'hortense' in v.name.lower():
-                engine.setProperty('voice', v.id)
-                break
-        engine.say(text)
-        engine.runAndWait()
-        engine.stop()
-    except Exception as e:
-        log.error(f"[TTS/SAPI5] {e}")
-
-
 def speak_text(text: str):
     def _run():
-        # Attendre max 5 s que la vérification edge-tts soit terminée
-        _edge_tts_ready.wait(timeout=5)
         with tts_lock:
-            if _edge_tts_ok:
-                log.info(f"[TTS/Edge] {text}")
-                try:
-                    _speak_edge(text)
-                    return          # succès → on s'arrête ici
-                except Exception as e:
-                    log.warning(f"[TTS/Edge] Erreur ({e}), bascule SAPI5")
-            # Fallback uniquement si edge est absent ou a échoué
-            log.info(f"[TTS/SAPI5] {text}")
-            _speak_sapi5(text)
+            log.info(f"[TTS/Edge] {text}")
+            try:
+                _speak_edge(text)
+            except Exception as e:
+                log.error(f"[TTS/Edge] Erreur : {e}")
     threading.Thread(target=_run, daemon=True).start()
-
 # ─────────────────────────────────────────────
 #  AUDIO / MP3 (pygame mixer)
 # ─────────────────────────────────────────────
