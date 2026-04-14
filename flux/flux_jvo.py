@@ -191,6 +191,7 @@ def mic_stop():
 tts_lock       = threading.Lock()
 EDGE_TTS_VOICE = "fr-FR-DeniseNeural"
 _edge_tts_ok   = False
+_edge_tts_ready = threading.Event()   # signalé quand la vérification est terminée
 
 def _check_edge_tts():
     global _edge_tts_ok
@@ -199,7 +200,10 @@ def _check_edge_tts():
         _edge_tts_ok = True
         log.info(f"[TTS] edge-tts disponible — voix : {EDGE_TTS_VOICE}")
     except ImportError:
+        _edge_tts_ok = False
         log.warning("[TTS] edge-tts introuvable (pip install edge-tts) — fallback pyttsx3 actif")
+    finally:
+        _edge_tts_ready.set()   # libère speak_text quel que soit le résultat
 
 threading.Thread(target=_check_edge_tts, daemon=True).start()
 
@@ -239,14 +243,17 @@ def _speak_sapi5(text: str):
 
 def speak_text(text: str):
     def _run():
+        # Attendre max 5 s que la vérification edge-tts soit terminée
+        _edge_tts_ready.wait(timeout=5)
         with tts_lock:
             if _edge_tts_ok:
                 log.info(f"[TTS/Edge] {text}")
                 try:
                     _speak_edge(text)
-                    return
+                    return          # succès → on s'arrête ici
                 except Exception as e:
                     log.warning(f"[TTS/Edge] Erreur ({e}), bascule SAPI5")
+            # Fallback uniquement si edge est absent ou a échoué
             log.info(f"[TTS/SAPI5] {text}")
             _speak_sapi5(text)
     threading.Thread(target=_run, daemon=True).start()
