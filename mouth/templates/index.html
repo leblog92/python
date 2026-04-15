@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>VoiceForge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;800&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0f;--surface:#111118;--panel:#16161e;--border:rgba(255,255,255,.07);
+  --accent:#c8f050;--accent2:#50f0c8;--text:#e8e8f0;--muted:#6b6b80;--danger:#f05068;
+  --radius:12px;--font-head:'Syne',sans-serif;--font-mono:'JetBrains Mono',monospace;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font-mono);min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;
+  background-image:linear-gradient(rgba(200,240,80,.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(200,240,80,.025) 1px,transparent 1px);
+  background-size:40px 40px;pointer-events:none;z-index:0}
+.app{position:relative;z-index:1;max-width:1000px;margin:0 auto;padding:2rem 1.5rem 4rem}
+
+/* Header */
+header{margin-bottom:2.5rem}
+.logo{font-family:var(--font-head);font-size:clamp(2rem,6vw,3.4rem);font-weight:800;letter-spacing:-.02em;line-height:1}
+.logo span{color:var(--accent)}
+.tagline{color:var(--muted);font-size:.75rem;letter-spacing:.15em;text-transform:uppercase;margin-top:.4rem}
+
+/* Grid */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem}
+@media(max-width:700px){.grid{grid-template-columns:1fr}}
+.full{grid-column:1/-1}
+
+/* Card */
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;animation:fadeUp .4s ease both}
+.card:nth-child(2){animation-delay:.07s}.card:nth-child(3){animation-delay:.14s}.card:nth-child(4){animation-delay:.21s}
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.card-title{font-family:var(--font-head);font-size:.72rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:1.2rem;display:flex;align-items:center;gap:.5rem}
+.card-title::before{content:'';display:block;width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+
+/* Form */
+label{display:block;font-size:.72rem;color:var(--muted);margin-bottom:.35rem;letter-spacing:.05em}
+select,textarea,input[type=range]{width:100%;background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;color:var(--text);font-family:var(--font-mono);font-size:.82rem;padding:.6rem .85rem;outline:none;transition:border-color .2s}
+select:focus,textarea:focus{border-color:var(--accent)}
+select option{background:var(--panel)}
+textarea{resize:vertical;min-height:88px}
+.row{display:flex;gap:.8rem;align-items:flex-end;flex-wrap:wrap}
+.row>*{flex:1;min-width:120px}
+
+/* Range */
+.range-wrap{margin-bottom:.8rem}
+input[type=range]{padding:0;height:4px;accent-color:var(--accent);cursor:pointer;border:none;background:var(--surface)}
+.range-row{display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted);margin-top:.2rem}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:.45rem;border:none;border-radius:8px;padding:.6rem 1.1rem;
+  font-family:var(--font-head);font-size:.78rem;font-weight:600;letter-spacing:.04em;cursor:pointer;transition:all .18s}
+.btn-primary{background:var(--accent);color:#0a0a0f}
+.btn-primary:hover{background:#d9ff60;transform:translateY(-1px);box-shadow:0 4px 18px rgba(200,240,80,.35)}
+.btn-secondary{background:transparent;color:var(--text);border:1px solid var(--border)}
+.btn-secondary:hover{border-color:var(--accent2);color:var(--accent2)}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none!important}
+.btn-row{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.9rem}
+
+/* Presets */
+.presets{display:flex;flex-wrap:wrap;gap:.45rem;margin-bottom:.9rem}
+.pill{background:var(--surface);border:1px solid var(--border);border-radius:999px;
+  padding:.3rem .8rem;font-size:.76rem;cursor:pointer;transition:all .15s;color:var(--text);font-family:var(--font-mono)}
+.pill:hover{border-color:var(--accent);color:var(--accent)}
+.pill.active{border-color:var(--accent);color:var(--accent)}
+
+/* Drop zone */
+.drop-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:1.2rem;
+  text-align:center;cursor:pointer;transition:all .2s;color:var(--muted);font-size:.78rem}
+.drop-zone:hover,.drop-zone.drag{border-color:var(--accent);color:var(--accent)}
+.drop-zone input{display:none}
+
+/* Player */
+.player-wrap{margin-top:1rem;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:1rem 1.2rem;display:none}
+.player-wrap.visible{display:block;animation:fadeUp .3s ease}
+.player-label{font-size:.7rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:.5rem}
+audio{width:100%;accent-color:var(--accent)}
+
+/* Status */
+.status{margin-top:.7rem;min-height:1.3rem;font-size:.76rem;color:var(--muted);display:flex;align-items:center;gap:.45rem}
+.status.ok{color:var(--accent)}.status.err{color:var(--danger)}.status.loading{color:var(--accent2)}
+.spinner{width:13px;height:13px;border:2px solid transparent;border-top-color:currentColor;
+  border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Phrases list */
+.phrases-list{display:flex;flex-direction:column;gap:.45rem;max-height:300px;overflow-y:auto;padding-right:.25rem}
+.phrases-list::-webkit-scrollbar{width:4px}
+.phrases-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+.phrase-item{display:flex;align-items:center;gap:.6rem;background:var(--surface);
+  border:1px solid var(--border);border-radius:8px;padding:.55rem .8rem;animation:fadeUp .2s ease}
+.phrase-meta{flex:1;min-width:0}
+.phrase-text{font-size:.8rem;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.phrase-sub{font-size:.67rem;color:var(--muted);margin-top:.15rem}
+.phrase-actions{display:flex;gap:.35rem;flex-shrink:0}
+.icon-btn{width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;
+  border:none;border-radius:6px;background:transparent;cursor:pointer;transition:all .15s;font-size:.82rem}
+.icon-btn.play{color:var(--accent2)}.icon-btn.play:hover{background:rgba(80,240,200,.1)}
+.icon-btn.edit{color:var(--muted)}.icon-btn.edit:hover{background:rgba(255,255,255,.06);color:var(--text)}
+.icon-btn.del{color:var(--danger)}.icon-btn.del:hover{background:rgba(240,80,104,.1)}
+.empty-state{color:var(--muted);font-size:.8rem;text-align:center;padding:1.5rem}
+.phrase-count{color:var(--muted);font-size:.72rem;font-family:var(--font-mono)}
+.title-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.2rem}
+.title-row .card-title{margin-bottom:0}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">Voice<span>Forge</span></div>
+    <div class="tagline">Synthèse vocale neurale · edge-tts · Bibliothèque JSON</div>
+  </header>
+
+  <div class="grid">
+
+    <!-- ── Card 1 : Voix ──────────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-title">Voix neurale</div>
+
+      <div class="row" style="margin-bottom:.9rem">
+        <div>
+          <label>Langue</label>
+          <select id="langSel" onchange="onLangChange()">
+            <option value="fr">🇫🇷 Français</option>
+            <option value="en">🇬🇧 English</option>
+            <option value="es">🇪🇸 Español</option>
+            <option value="de">🇩🇪 Deutsch</option>
+            <option value="it">🇮🇹 Italiano</option>
+            <option value="pt">🇵🇹 Português</option>
+            <option value="nl">🇳🇱 Nederlands</option>
+            <option value="zh">🇨🇳 中文</option>
+            <option value="ja">🇯🇵 日本語</option>
+            <option value="ar">🇸🇦 العربية</option>
+          </select>
+        </div>
+        <div>
+          <label>Voix</label>
+          <select id="voiceSel"></select>
+        </div>
+      </div>
+
+      <div class="range-wrap">
+        <label>Vitesse : <span id="rateVal">+0%</span></label>
+        <input type="range" id="rateRange" min="-50" max="100" value="0" step="5" oninput="updateRate()">
+        <div class="range-row"><span>-50%</span><span>normal</span><span>+100%</span></div>
+      </div>
+
+      <div class="range-wrap">
+        <label>Hauteur : <span id="pitchVal">+0Hz</span></label>
+        <input type="range" id="pitchRange" min="-20" max="20" value="0" step="1" oninput="updatePitch()">
+        <div class="range-row"><span>-20Hz</span><span>normal</span><span>+20Hz</span></div>
+      </div>
+
+      <div style="margin-top:.8rem">
+        <label>Fichier WAV de référence (mémo)</label>
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="wavInput" accept=".wav"/>
+          <span id="dropLabel">📂 Glisser-déposer ou cliquer</span>
+        </div>
+        <div id="uploadedList" style="margin-top:.5rem;font-size:.73rem;color:var(--muted)"></div>
+      </div>
+    </div>
+
+    <!-- ── Card 2 : Synthèse ──────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-title">Synthèse</div>
+
+      <label style="margin-bottom:.5rem">Phrases rapides</label>
+      <div class="presets" id="presets">
+        <button class="pill" onclick="setPreset(this)">Bonjour, comment allez-vous ?</button>
+        <button class="pill" onclick="setPreset(this)">Le rapport est prêt pour révision.</button>
+        <button class="pill" onclick="setPreset(this)">Merci de votre confiance.</button>
+        <button class="pill" onclick="setPreset(this)">La réunion commence dans cinq minutes.</button>
+        <button class="pill" onclick="setPreset(this)">Veuillez patienter un instant.</button>
+        <button class="pill" onclick="setPreset(this)">Bonne journée à tous !</button>
+      </div>
+
+      <label>Texte libre</label>
+      <textarea id="textInput" placeholder="Tapez ou choisissez une phrase…" rows="4"></textarea>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="synthBtn" onclick="synthesize()">▶ Générer</button>
+        <button class="btn btn-secondary" onclick="savePhrase()">＋ Sauvegarder</button>
+      </div>
+
+      <div class="status" id="synthStatus"></div>
+
+      <div class="player-wrap" id="playerWrap">
+        <div class="player-label">Sortie audio</div>
+        <audio id="audioPlayer" controls></audio>
+      </div>
+    </div>
+
+    <!-- ── Card 3 : Bibliothèque (full width) ────────────────────────── -->
+    <div class="card full">
+      <div class="title-row">
+        <div class="card-title">Bibliothèque de phrases</div>
+        <span class="phrase-count" id="phraseCount">0 phrase(s)</span>
+      </div>
+      <div class="phrases-list" id="phrasesList">
+        <div class="empty-state">Aucune phrase sauvegardée</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let allVoices = {};
+let phrases   = [];
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  const res = await fetch('/api/voices');
+  allVoices = await res.json();
+  onLangChange();
+  await loadPhrases();
+  await loadUploaded();
+}
+
+// ── Langue / Voix ─────────────────────────────────────────────────────────────
+function onLangChange() {
+  const lang = document.getElementById('langSel').value;
+  const sel  = document.getElementById('voiceSel');
+  const list = allVoices[lang] || [];
+  sel.innerHTML = list.map(v => `<option value="${v.id}">${v.label}</option>`).join('');
+}
+
+// ── Sliders ───────────────────────────────────────────────────────────────────
+function updateRate() {
+  const v = document.getElementById('rateRange').value;
+  document.getElementById('rateVal').textContent = (v >= 0 ? '+' : '') + v + '%';
+}
+function updatePitch() {
+  const v = document.getElementById('pitchRange').value;
+  document.getElementById('pitchVal').textContent = (v >= 0 ? '+' : '') + v + 'Hz';
+}
+function getRateStr() {
+  const v = parseInt(document.getElementById('rateRange').value);
+  return (v >= 0 ? '+' : '') + v + '%';
+}
+function getPitchStr() {
+  const v = parseInt(document.getElementById('pitchRange').value);
+  return (v >= 0 ? '+' : '') + v + 'Hz';
+}
+
+// ── Preset pills ──────────────────────────────────────────────────────────────
+function setPreset(btn) {
+  document.getElementById('textInput').value = btn.textContent.trim();
+  document.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// ── Synthesize ────────────────────────────────────────────────────────────────
+async function synthesize(textOverride, voiceOverride) {
+  const text  = textOverride || document.getElementById('textInput').value.trim();
+  const voice = voiceOverride || document.getElementById('voiceSel').value;
+  if (!text)  { setStatus('Entrez un texte', 'err'); return; }
+  if (!voice) { setStatus('Sélectionnez une voix', 'err'); return; }
+
+  const btn = document.getElementById('synthBtn');
+  btn.disabled = true;
+  setStatus('Génération en cours…', 'loading', true);
+
+  try {
+    const res = await fetch('/api/synthesize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice, rate: getRateStr(), pitch: getPitchStr() }),
+    });
+    const data = await res.json();
+    if (data.url) {
+      const player = document.getElementById('audioPlayer');
+      player.src = data.url + '?t=' + Date.now();
+      document.getElementById('playerWrap').classList.add('visible');
+      player.play();
+      setStatus('✓ Audio généré — ' + voice, 'ok');
+    } else {
+      setStatus(data.error || 'Erreur inconnue', 'err');
+    }
+  } catch(e) {
+    setStatus('Erreur réseau : ' + e.message, 'err');
+  }
+  btn.disabled = false;
+}
+
+// ── Phrases ───────────────────────────────────────────────────────────────────
+async function loadPhrases() {
+  const res = await fetch('/api/phrases');
+  phrases = await res.json();
+  renderPhrases();
+}
+
+function renderPhrases() {
+  const el = document.getElementById('phrasesList');
+  document.getElementById('phraseCount').textContent = `${phrases.length} phrase(s)`;
+  if (!phrases.length) {
+    el.innerHTML = '<div class="empty-state">Aucune phrase sauvegardée</div>';
+    return;
+  }
+  el.innerHTML = '';
+  [...phrases].reverse().forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'phrase-item';
+    const ts = new Date(p.created * 1000).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    div.innerHTML = `
+      <div class="phrase-meta">
+        <div class="phrase-text" title="${esc(p.text)}">${esc(p.text)}</div>
+        <div class="phrase-sub">${p.voice || '—'} · ${ts}</div>
+      </div>
+      <div class="phrase-actions">
+        <button class="icon-btn play" title="Lire" onclick="playPhrase('${p.id}')">▶</button>
+        <button class="icon-btn edit" title="Insérer dans le texte" onclick="insertPhrase('${p.id}')">✏</button>
+        <button class="icon-btn del" title="Supprimer" onclick="deletePhrase('${p.id}')">✕</button>
+      </div>`;
+    el.appendChild(div);
+  });
+}
+
+async function savePhrase() {
+  const text = document.getElementById('textInput').value.trim();
+  if (!text) { setStatus('Texte vide', 'err'); return; }
+  const res = await fetch('/api/phrases', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text,
+      voice: document.getElementById('voiceSel').value,
+      lang:  document.getElementById('langSel').value,
+      rate:  getRateStr(),
+      pitch: getPitchStr(),
+    }),
+  });
+  const entry = await res.json();
+  if (entry.id) { phrases.push(entry); renderPhrases(); setStatus('✓ Sauvegardée', 'ok'); }
+}
+
+async function deletePhrase(id) {
+  await fetch(`/api/phrases/${id}`, { method: 'DELETE' });
+  phrases = phrases.filter(p => p.id !== id);
+  renderPhrases();
+}
+
+function playPhrase(id) {
+  const p = phrases.find(x => x.id === id);
+  if (!p) return;
+  // Restaurer la voix/langue/rate/pitch sauvegardés
+  if (p.lang  && document.getElementById('langSel').value !== p.lang) {
+    document.getElementById('langSel').value = p.lang;
+    onLangChange();
+  }
+  if (p.voice) document.getElementById('voiceSel').value = p.voice;
+  synthesize(p.text, p.voice);
+}
+
+function insertPhrase(id) {
+  const p = phrases.find(x => x.id === id);
+  if (p) document.getElementById('textInput').value = p.text;
+}
+
+// ── Upload WAV ────────────────────────────────────────────────────────────────
+const dropZone = document.getElementById('dropZone');
+const wavInput = document.getElementById('wavInput');
+dropZone.addEventListener('click', () => wavInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag'); uploadWav(e.dataTransfer.files[0]); });
+wavInput.addEventListener('change', () => uploadWav(wavInput.files[0]));
+
+async function uploadWav(file) {
+  if (!file || !file.name.toLowerCase().endsWith('.wav')) { setStatus('Fichier WAV uniquement', 'err'); return; }
+  document.getElementById('dropLabel').textContent = '⏳ Upload…';
+  const fd = new FormData(); fd.append('file', file);
+  const res = await fetch('/api/voices/upload', { method: 'POST', body: fd });
+  document.getElementById('dropLabel').textContent = '📂 Glisser-déposer ou cliquer';
+  if (res.ok) { await loadUploaded(); setStatus('✓ WAV uploadé', 'ok'); }
+}
+
+async function loadUploaded() {
+  const res = await fetch('/api/voices/uploaded');
+  const list = await res.json();
+  const el = document.getElementById('uploadedList');
+  el.textContent = list.length ? '📁 ' + list.join(', ') : '';
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function setStatus(msg, type, spinner) {
+  const el = document.getElementById('synthStatus');
+  el.className = 'status ' + (type || '');
+  el.innerHTML = (spinner ? '<span class="spinner"></span>' : '') + msg;
+}
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+init();
+</script>
+</body>
+</html>

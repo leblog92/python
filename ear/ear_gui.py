@@ -4,6 +4,7 @@ import threading
 import queue
 from datetime import datetime
 import os
+import platform
 import pygame
 
 # ─────────────────────────────────────────────────────────────
@@ -41,10 +42,39 @@ class VoiceAssistantGUI:
         self.start_time     = datetime.now()
 
         self.root = tk.Tk()
-        self.root.overrideredirect(True)
+        self.root.title("EAR — Enhanced Audio Recognition")
         self.root.geometry("980x700")
         self.root.minsize(800, 580)
         self.root.configure(bg=BG)
+        self.root.overrideredirect(True)
+
+        # Force the window back into the taskbar and Alt+Tab after overrideredirect.
+        # overrideredirect removes WS_EX_APPWINDOW and adds WS_EX_TOOLWINDOW;
+        # we reverse that with SetWindowLongW on the extended style.
+        if platform.system() == "Windows":
+            self.root.update_idletasks()
+            import ctypes
+            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
+            WS_EX_APPWINDOW  = 0x00040000
+            WS_EX_TOOLWINDOW = 0x00000080
+            GWL_EXSTYLE = -20
+            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            style  = (style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+            # Hide and re-show so the taskbar picks up the change
+            self.root.withdraw()
+            self.root.after(10, self.root.deiconify)
+
+        # Load taskbar icon — use absolute path relative to this script
+        try:
+            _ico = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ear.ico")
+            self.root.iconbitmap(_ico)
+        except Exception:
+            pass
+
+        # Allow dragging the frameless window
+        self._drag_x = 0
+        self._drag_y = 0
 
         # Allow dragging the frameless window
         self._drag_x = 0
@@ -144,6 +174,14 @@ class VoiceAssistantGUI:
         close_btn.bind("<Leave>",   lambda e: close_btn.config(fg=FG_DIM))
         close_btn.bind("<Button-1>",lambda e: self._on_close())
 
+        # Minimize button (−)
+        min_btn = tk.Label(bar, text="−", font=("Segoe UI", 18),
+                           fg=FG_DIM, bg=PANEL, cursor="hand2", padx=10)
+        min_btn.pack(side="right")
+        min_btn.bind("<Enter>",   lambda e: min_btn.config(fg=FG))
+        min_btn.bind("<Leave>",   lambda e: min_btn.config(fg=FG_DIM))
+        min_btn.bind("<Button-1>",lambda e: self._minimize())
+
         # Status pill
         self._status_frame = tk.Frame(bar, bg=PANEL)
         self._status_frame.pack(side="right", padx=12)
@@ -164,6 +202,15 @@ class VoiceAssistantGUI:
         x = event.x_root - self._drag_x
         y = event.y_root - self._drag_y
         self.root.geometry(f"+{x}+{y}")
+
+    def _minimize(self):
+        """Minimize to taskbar — works with overrideredirect via ctypes ShowWindow."""
+        if platform.system() == "Windows":
+            import ctypes
+            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
+            ctypes.windll.user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE = 6
+        else:
+            self.root.iconify()
 
     # — Body (sidebar + log) ——————————————————
     def _build_body(self):
@@ -582,3 +629,6 @@ class VoiceAssistantGUI:
             self.root.after(400, self.root.destroy)
         else:
             self.root.destroy()
+
+    def _destroy_all(self):
+        self.root.destroy()

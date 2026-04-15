@@ -1,0 +1,27 @@
+[
+  {
+    "id": 1,
+    "text": "Bonjour, bienvenue dans la salle jeux video.",
+    "visible": false
+  },
+  {
+    "id": 2,
+    "text": "Un membre du personnel va arriver dans quelques instants.",
+    "visible": true
+  },
+  {
+    "id": 3,
+    "text": "Vous pouvez vous installer dans la salle du fond.",
+    "visible": true
+  },
+  {
+    "id": 4,
+    "text": "Attention, la salle fermera dans quelques minutes !",
+    "visible": true
+  },
+  {
+    "id": 5,
+    "text": "Vous pouvez consulter les jeux disponibles sur le panneau.",
+    "visible": true
+  }
+]

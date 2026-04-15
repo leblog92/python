@@ -531,19 +531,89 @@ def video_feed():
 
 
 # ── TTS ──────────────────────────────────────
+# Fichier JSON des phrases pre-enregistrees
+PHRASES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'phrases.json')
+
+EDGE_VOICES = [
+    {"id": "fr-FR-DeniseNeural",   "label": "FR Denise (femme)"},
+    {"id": "fr-FR-HenriNeural",    "label": "FR Henri (homme)"},
+    {"id": "fr-FR-EloiseNeural",   "label": "FR Eloise (fille)"},
+    {"id": "fr-BE-CharlineNeural", "label": "BE Charline"},
+    {"id": "fr-CH-ArianeNeural",   "label": "CH Ariane"},
+    {"id": "fr-CA-SylvieNeural",   "label": "CA Sylvie"},
+]
+
+def _load_phrases():
+    defaults = [
+        {"id": 1, "text": "Bonjour, bienvenue dans la salle jeux video."},
+        {"id": 2, "text": "Un membre du personnel va arriver dans quelques instants."},
+        {"id": 3, "text": "Vous pouvez vous installer dans la salle du fond."},
+        {"id": 4, "text": "Attention, la salle fermera dans quelques minutes !"},
+        {"id": 5, "text": "Vous pouvez consulter les jeux disponibles sur le panneau."},
+    ]
+    try:
+        if os.path.exists(PHRASES_FILE):
+            with open(PHRASES_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        log.warning(f"[PHRASES] Lecture echouee : {e}")
+    return defaults
+
+def _save_phrases(phrases):
+    try:
+        with open(PHRASES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(phrases, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.error(f"[PHRASES] Sauvegarde echouee : {e}")
+
 @app.route('/tts', methods=['POST'])
 def tts():
-    """
-    POST JSON : {"text": "Bonjour la salle !"}
-    Déclenche la lecture TTS sur la machine caméra.
-    """
     data = request.get_json(silent=True) or {}
     text = data.get('text', '').strip()
     if not text:
-        return jsonify({"status": "error", "message": "Champ 'text' manquant ou vide"}), 400
-    print(f"[TTS] ← {text}")
+        return jsonify({"status": "error", "message": "Champ text manquant ou vide"}), 400
+    log.info(f"[TTS] {text}")
     speak_text(text)
     return jsonify({"status": "ok", "text": text})
+
+@app.route('/voices')
+def voices():
+    return jsonify({"voices": EDGE_VOICES, "current": EDGE_TTS_VOICE})
+
+@app.route('/set_voice', methods=['POST'])
+def set_voice():
+    global EDGE_TTS_VOICE
+    data = request.get_json(silent=True) or {}
+    v = data.get('voice', '').strip()
+    if not any(x['id'] == v for x in EDGE_VOICES):
+        return jsonify({"status": "error", "message": "Voix inconnue"}), 400
+    EDGE_TTS_VOICE = v
+    log.info(f"[TTS] Voix changee : {v}")
+    return jsonify({"status": "ok", "voice": v})
+
+@app.route('/phrases')
+def get_phrases():
+    return jsonify({"phrases": _load_phrases()})
+
+@app.route('/phrases', methods=['POST'])
+def add_phrase():
+    data = request.get_json(silent=True) or {}
+    text = data.get('text', '').strip()
+    if not text:
+        return jsonify({"status": "error", "message": "Texte vide"}), 400
+    phrases = _load_phrases()
+    new_id  = max((p['id'] for p in phrases), default=0) + 1
+    phrases.append({"id": new_id, "text": text})
+    _save_phrases(phrases)
+    return jsonify({"status": "ok", "phrases": phrases})
+
+@app.route('/phrases/<int:pid>', methods=['DELETE'])
+def delete_phrase(pid):
+    phrases = [p for p in _load_phrases() if p['id'] != pid]
+    _save_phrases(phrases)
+    return jsonify({"status": "ok", "phrases": phrases})
+
+
 
 
 # ── MP3 : upload ─────────────────────────────
@@ -816,6 +886,51 @@ def index():
   .upload-area:hover {{ border-color:var(--accent); color:var(--text); }}
   input[type=file] {{ display:none; }}
 
+  /* ── Phrases rapides ── */
+  .quick-btns {{ display:flex; flex-direction:column; gap:5px; max-height:220px; overflow-y:auto;
+                scrollbar-width:thin; scrollbar-color:var(--border) transparent; }}
+  .quick-item {{ display:flex; align-items:center; gap:6px; }}
+  .quick-btn {{
+    flex:1; background:#111; border:1px solid var(--border); border-radius:6px;
+    color:var(--text); padding:7px 10px; font-size:.82rem; cursor:pointer;
+    text-align:left; transition:border .2s, background .2s;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }}
+  .quick-btn:hover {{ border-color:var(--accent); background:#1a1a2e; }}
+  .quick-del {{ background:none; border:none; color:var(--muted); cursor:pointer;
+               font-size:.9rem; padding:2px 6px; flex-shrink:0; line-height:1; }}
+  .quick-del:hover {{ color:var(--red); }}
+  select {{
+    width:100%; background:#111; border:1px solid var(--border); border-radius:6px;
+    color:var(--text); padding:8px 10px; font-size:.85rem; outline:none; cursor:pointer;
+    transition:border .2s; margin-bottom:8px;
+  }}
+  select:focus {{ border-color:var(--accent); }}
+
+  /* ── Menu sections ── */
+  .menu-overlay {{ display:none; position:fixed; inset:0; z-index:200; }}
+  .menu-overlay.open {{ display:block; }}
+  .menu-panel {{
+    position:absolute; top:50px; right:16px; width:230px;
+    background:var(--surface); border:1px solid var(--border); border-radius:10px;
+    padding:10px 0; box-shadow:0 8px 32px #0008;
+  }}
+  .menu-title {{ font-size:.72rem; text-transform:uppercase; letter-spacing:.1em;
+                color:var(--muted); padding:6px 16px 4px; }}
+  .menu-item {{ display:flex; align-items:center; justify-content:space-between;
+               padding:9px 16px; font-size:.85rem; cursor:pointer; transition:background .15s; }}
+  .menu-item:hover {{ background:#ffffff0d; }}
+  .menu-item span {{ color:var(--text); }}
+  .menu-toggle {{ width:32px; height:18px; border-radius:9px; background:#333;
+                 position:relative; transition:background .2s; flex-shrink:0; }}
+  .menu-toggle.on {{ background:var(--accent); }}
+  .menu-toggle::after {{ content:''; width:14px; height:14px; border-radius:50%;
+    background:#fff; position:absolute; top:2px; left:2px; transition:left .2s; }}
+  .menu-toggle.on::after {{ left:16px; }}
+  .menu-btn {{ background:none; border:none; color:var(--text); cursor:pointer;
+              font-size:1.2rem; padding:4px 8px; border-radius:6px; transition:background .15s; }}
+  .menu-btn:hover {{ background:#ffffff15; }}
+
   /* ── Toast ── */
   #toast {{
     position:fixed; bottom:20px; right:20px; z-index:999;
@@ -830,10 +945,48 @@ def index():
 </head>
 <body>
 
-<header>
-  <div class="dot"></div>
-  <h1>SALLE JVO – Surveillance &amp; Diffusion</h1>
+<header style="justify-content:space-between">
+  <div style="display:flex;align-items:center;gap:12px">
+    <div class="dot"></div>
+    <h1>SALLE JVO – Surveillance &amp; Diffusion</h1>
+  </div>
+  <button class="menu-btn" onclick="toggleMenu()" title="Afficher/masquer les sections">☰</button>
 </header>
+
+<!-- Menu sections -->
+<div class="menu-overlay" id="menuOverlay" onclick="closeMenu()">
+  <div class="menu-panel" onclick="event.stopPropagation()">
+    <div class="menu-title">Sections visibles</div>
+    <div class="menu-item" onclick="toggleSection('cardCaptures')">
+      <span>Captures mouvement</span>
+      <div class="menu-toggle on" id="tog-cardCaptures"></div>
+    </div>
+    <div class="menu-item" onclick="toggleSection('cardQuality')">
+      <span>Qualité vidéo</span>
+      <div class="menu-toggle on" id="tog-cardQuality"></div>
+    </div>
+    <div class="menu-item" onclick="toggleSection('cardTTS')">
+      <span>Synthèse vocale</span>
+      <div class="menu-toggle on" id="tog-cardTTS"></div>
+    </div>
+    <div class="menu-item" onclick="toggleSection('cardPhrases')">
+      <span>Phrases rapides</span>
+      <div class="menu-toggle on" id="tog-cardPhrases"></div>
+    </div>
+    <div class="menu-item" onclick="toggleSection('cardListen')">
+      <span>Écoute en direct</span>
+      <div class="menu-toggle on" id="tog-cardListen"></div>
+    </div>
+    <div class="menu-item" onclick="toggleSection('cardUpload')">
+      <span>Upload audio</span>
+      <div class="menu-toggle on" id="tog-cardUpload"></div>
+    </div>
+    <div class="menu-item" onclick="toggleSection('cardPlayer')">
+      <span>Lecteur MP3</span>
+      <div class="menu-toggle on" id="tog-cardPlayer"></div>
+    </div>
+  </div>
+</div>
 
 <div class="layout">
   <!-- Flux vidéo -->
@@ -845,7 +998,7 @@ def index():
   <div class="ctrl-panel">
 
     <!-- Captures mouvement -->
-    <div class="card">
+    <div class="card" id="cardCaptures">
       <h2>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
         Captures mouvement
@@ -865,7 +1018,7 @@ def index():
     </div>
 
     <!-- Qualité vidéo -->
-    <div class="card">
+    <div class="card" id="cardQuality">
       <h2>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
         Qualité vidéo
@@ -879,11 +1032,14 @@ def index():
     </div>
 
     <!-- TTS -->
-    <div class="card">
+    <div class="card" id="cardTTS">
       <h2>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
         Synthèse vocale (TTS)
       </h2>
+      <select id="voiceSelect" onchange="setVoice(this.value)">
+        <option value="">Chargement des voix…</option>
+      </select>
       <textarea id="ttsText" rows="3" placeholder="Tapez votre message ici…"></textarea>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="sendTTS()">▶ Lire</button>
@@ -892,16 +1048,22 @@ def index():
     </div>
 
     <!-- Phrases rapides -->
-    <div class="card">
+    <div class="card" id="cardPhrases">
       <h2>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         Phrases rapides
       </h2>
       <div class="quick-btns" id="quickBtns"></div>
+      <div style="display:flex;gap:6px;margin-top:10px">
+        <input type="text" id="newPhrase" placeholder="Nouvelle phrase…"
+               style="flex:1;padding:7px 9px;font-size:.82rem"
+               onkeydown="if(event.key==='Enter') addPhrase()">
+        <button class="btn btn-success" onclick="addPhrase()" style="padding:7px 12px">＋</button>
+      </div>
     </div>
 
     <!-- Écoute en direct -->
-    <div class="card">
+    <div class="card" id="cardListen">
       <h2>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
         Écoute en direct
@@ -922,7 +1084,7 @@ def index():
     </div>
 
     <!-- Upload MP3 -->
-    <div class="card">
+    <div class="card" id="cardUpload">
       <h2>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         Ajouter un fichier audio
@@ -934,7 +1096,7 @@ def index():
     </div>
 
     <!-- Lecteur MP3 -->
-    <div class="card">
+    <div class="card" id="cardPlayer">
       <h2>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
         Fichiers audio
@@ -1126,6 +1288,36 @@ async function setQuality(q) {{
   }} catch(e) {{}}
 }})();
 
+// ── Menu sections ───────────────────────────
+const SECTION_KEY = 'jvo_sections';
+let sectionState = JSON.parse(localStorage.getItem(SECTION_KEY) || '{{}}');
+
+function toggleMenu() {{
+  document.getElementById('menuOverlay').classList.toggle('open');
+}}
+function closeMenu() {{
+  document.getElementById('menuOverlay').classList.remove('open');
+}}
+function toggleSection(id) {{
+  const card = document.getElementById(id);
+  const tog  = document.getElementById('tog-' + id);
+  const visible = card.style.display === 'none';
+  card.style.display = visible ? '' : 'none';
+  tog.classList.toggle('on', visible);
+  sectionState[id] = visible;
+  localStorage.setItem(SECTION_KEY, JSON.stringify(sectionState));
+}}
+function applySectionState() {{
+  Object.entries(sectionState).forEach(([id, visible]) => {{
+    const card = document.getElementById(id);
+    const tog  = document.getElementById('tog-' + id);
+    if (!card || !tog) return;
+    card.style.display = visible ? '' : 'none';
+    tog.classList.toggle('on', visible);
+  }});
+}}
+applySectionState();
+
 // ── Flux vidéo ──────────────────────────────
 const feed = document.getElementById('videoFeed');
 feed.onerror = () => {{ feed.src = SERVER + '/video_feed?t=' + Date.now(); }};
@@ -1163,28 +1355,91 @@ document.getElementById('ttsText').addEventListener('keydown', e => {{
   if (e.ctrlKey && e.key === 'Enter') sendTTS();
 }});
 
+// ── Voix edge-tts ────────────────────────────
+async function loadVoices() {{
+  try {{
+    const r = await fetch(SERVER + '/voices');
+    const d = await r.json();
+    const sel = document.getElementById('voiceSelect');
+    sel.innerHTML = '';
+    d.voices.forEach(v => {{
+      const o = document.createElement('option');
+      o.value = v.id; o.textContent = v.label;
+      if (v.id === d.current) o.selected = true;
+      sel.appendChild(o);
+    }});
+  }} catch(e) {{ console.error('loadVoices', e); }}
+}}
+async function setVoice(id) {{
+  if (!id) return;
+  try {{
+    const r = await fetch(SERVER + '/set_voice', {{
+      method:'POST', headers:{{'Content-Type':'application/json'}},
+      body: JSON.stringify({{voice: id}})
+    }});
+    const d = await r.json();
+    if (d.status === 'ok') toast('Voix : ' + id.split('-').slice(2).join(' '));
+    else toast('Erreur voix', 'err');
+  }} catch(e) {{ toast('Connexion impossible','err'); }}
+}}
+
 // ── Phrases rapides ──────────────────────────
-const QUICK_PHRASES = [
-  'Bonjour, bienvenue dans la salle jeux vidéo.',
-  'Un membre du personnel va arriver dans quelques instants. Veuillez patienter.',
-  'Vous pouvez vous installer dans la salle du fond.',
-  'Attention, la salle fermera dans quelques minutes !',
-  'Vous pouvez consulter les jeux disponibles sur place sur le panneau.',
-];
-function buildQuickBtns() {{
-  const c = document.getElementById('quickBtns');
-  QUICK_PHRASES.forEach(p => {{
-    const b = document.createElement('button');
-    b.className = 'quick-btn';
-    b.textContent = '🔊 ' + p;
-    b.onclick = () => {{
-      document.getElementById('ttsText').value = p;
-      sendTTS();
-    }};
-    c.appendChild(b);
+function buildQuickBtns(phrases) {{
+  const wrap = document.getElementById('quickBtns');
+  wrap.innerHTML = '';
+  phrases.forEach(p => {{
+    const row = document.createElement('div');
+    row.className = 'quick-item';
+
+    const btn = document.createElement('button');
+    btn.className = 'quick-btn';
+    btn.textContent = '🔊 ' + p.text; btn.title = p.text;
+    btn.onclick = () => {{ document.getElementById('ttsText').value = p.text; sendTTS(); }};
+
+    const del = document.createElement('button');
+    del.className = 'quick-del'; del.title = 'Supprimer'; del.textContent = '✕';
+    del.onclick = () => deletePhrase(p.id);
+
+    row.appendChild(btn); row.appendChild(del);
+    wrap.appendChild(row);
   }});
 }}
-buildQuickBtns();
+
+async function loadPhrases() {{
+  try {{
+    const r = await fetch(SERVER + '/phrases');
+    const d = await r.json();
+    buildQuickBtns(d.phrases);
+  }} catch(e) {{ console.error('loadPhrases', e); }}
+}}
+
+async function addPhrase() {{
+  const inp  = document.getElementById('newPhrase');
+  const text = inp.value.trim();
+  if (!text) {{ toast('Phrase vide', 'err'); return; }}
+  try {{
+    const r = await fetch(SERVER + '/phrases', {{
+      method:'POST', headers:{{'Content-Type':'application/json'}},
+      body: JSON.stringify({{text}})
+    }});
+    const d = await r.json();
+    if (d.status === 'ok') {{ inp.value = ''; buildQuickBtns(d.phrases); toast('Phrase ajoutee'); }}
+    else toast('Erreur', 'err');
+  }} catch(e) {{ toast('Connexion impossible','err'); }}
+}}
+
+async function deletePhrase(id) {{
+  try {{
+    const r = await fetch(SERVER + '/phrases/' + id, {{method:'DELETE'}});
+    const d = await r.json();
+    if (d.status === 'ok') {{ buildQuickBtns(d.phrases); toast('Phrase supprimee'); }}
+  }} catch(e) {{ toast('Connexion impossible','err'); }}
+}}
+
+
+
+loadVoices();
+loadPhrases();
 
 // ── Upload MP3 ────────────────────────────────
 async function uploadMP3(file) {{
