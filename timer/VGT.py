@@ -5,6 +5,7 @@ import threading
 import pytz
 import time
 import os
+import ctypes
 
 # ─── Lecture MP3 ──────────────────────────────────────────────────────────────
 try:
@@ -13,13 +14,11 @@ try:
     USE_PYGAME = True
 except ImportError:
     USE_PYGAME = False
-    print("pygame non installé — pip install pygame")
 
 def play_mp3(file_path):
     if not USE_PYGAME:
         return
     if not os.path.isfile(file_path):
-        print(f"Fichier introuvable : {file_path}")
         return
     def inner():
         try:
@@ -61,7 +60,6 @@ BG2        = "#2a2a2a"
 FG         = "#e0e0e0"
 FG_DIM     = "#888888"
 ACCENT     = "#c0392b"
-TITLEBAR_H = 32
 FONT_TITLE = ("Consolas", 11, "bold")
 FONT_CLOCK = ("Consolas", 36, "bold")
 FONT_MONO  = ("Consolas", 10)
@@ -75,16 +73,13 @@ def boucle_heure():
         maintenant = datetime.datetime.now(paris)
         heure_affichee = maintenant.strftime("%H:%M:%S")
         heure_rappel   = maintenant.strftime("%H:%M")
-
         root.after(0, heure_label.config, {'text': heure_affichee})
-
         if heure_rappel in heure_sons and heure_rappel not in parlees:
             son = heure_sons[heure_rappel]
             play_mp3(son)
             parlees.add(heure_rappel)
             rappel_count += 1
             root.after(0, on_rappel, heure_rappel, son)
-
         time.sleep(1)
 
 def on_rappel(heure, son):
@@ -209,7 +204,7 @@ def open_editor():
 
 # ─── GUI ──────────────────────────────────────────────────────────────────────
 root = tk.Tk()
-root.overrideredirect(True)          # supprime la barre système
+root.title("Video Game Timer")
 root.configure(bg=BG)
 root.resizable(False, False)
 
@@ -218,35 +213,36 @@ sw = root.winfo_screenwidth()
 sh = root.winfo_screenheight()
 root.geometry(f"{WIN_W}x{WIN_H}+{(sw-WIN_W)//2}+{(sh-WIN_H)//2}")
 
-# ── Barre de titre custom ─────────────────────────────────────────────────────
-titlebar = tk.Frame(root, bg=ACCENT, height=TITLEBAR_H)
-titlebar.pack(fill=tk.X, side=tk.TOP)
-titlebar.pack_propagate(False)
-
-tk.Label(titlebar, text="  VIDEO GAME TIMER", font=FONT_TITLE,
-         fg="white", bg=ACCENT, anchor="w").pack(side=tk.LEFT, fill=tk.Y)
-
-close_btn = tk.Label(titlebar, text="  ✕  ", font=("Consolas", 12, "bold"),
-                     fg="white", bg=ACCENT, cursor="hand2")
-close_btn.pack(side=tk.RIGHT, fill=tk.Y)
-close_btn.bind("<Button-1>", lambda e: root.destroy())
-close_btn.bind("<Enter>",    lambda e: close_btn.configure(bg="#8b0000"))
-close_btn.bind("<Leave>",    lambda e: close_btn.configure(bg=ACCENT))
-
-# Drag
-_drag = {"x": 0, "y": 0}
-def on_drag_start(e):
-    _drag["x"] = e.x
-    _drag["y"] = e.y
-def on_drag_motion(e):
-    dx = e.x - _drag["x"]
-    dy = e.y - _drag["y"]
-    x = root.winfo_x() + dx
-    y = root.winfo_y() + dy
-    root.geometry(f"+{x}+{y}")
-
-titlebar.bind("<ButtonPress-1>",   on_drag_start)
-titlebar.bind("<B1-Motion>",       on_drag_motion)
+# ─── Barre Windows en dark via DWM ────────────────────────────────────────────
+# DWMWA_USE_IMMERSIVE_DARK_MODE = 20 (Windows 11) / 19 (Windows 10)
+root.update()
+hwnd = ctypes.windll.user32.FindWindowW(None, "Video Game Timer")
+DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+value = ctypes.c_int(1)
+ctypes.windll.dwmapi.DwmSetWindowAttribute(
+    hwnd,
+    DWMWA_USE_IMMERSIVE_DARK_MODE,
+    ctypes.byref(value),
+    ctypes.sizeof(value)
+)
+# Couleur de fond de la barre titre (BGR hex) = #1e1e1e
+DWMWA_CAPTION_COLOR = 35
+color = ctypes.c_int(0x001e1e1e)
+ctypes.windll.dwmapi.DwmSetWindowAttribute(
+    hwnd,
+    DWMWA_CAPTION_COLOR,
+    ctypes.byref(color),
+    ctypes.sizeof(color)
+)
+# Couleur du texte de la barre titre = blanc
+DWMWA_TEXT_COLOR = 36
+text_color = ctypes.c_int(0x00e0e0e0)
+ctypes.windll.dwmapi.DwmSetWindowAttribute(
+    hwnd,
+    DWMWA_TEXT_COLOR,
+    ctypes.byref(text_color),
+    ctypes.sizeof(text_color)
+)
 
 # ── Contenu ───────────────────────────────────────────────────────────────────
 content_frame = tk.Frame(root, bg=BG)

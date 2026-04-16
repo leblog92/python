@@ -1,10 +1,5 @@
 [
   {
-    "id": 1,
-    "text": "Bonjour, bienvenue dans la salle jeux video.",
-    "visible": false
-  },
-  {
     "id": 2,
     "text": "Un membre du personnel va arriver dans quelques instants.",
     "visible": true
@@ -15,12 +10,19 @@
     "visible": true
   },
   {
-    "id": 5,
-    "text": "Vous pouvez consulter les jeux disponibles sur le panneau.",
-    "visible": true
-  },
-  {
     "id": 6,
     "text": "Vous pouvez vous installer dans la salle et choisir votre jeu."
+  },
+  {
+    "id": 7,
+    "text": "Bonjour ! Bienvenue dans la salle jeux vidéo !"
+  },
+  {
+    "id": 8,
+    "text": "Vous pouvez consulter les jeux disponibles sur place sur le panneau."
+  },
+  {
+    "id": 9,
+    "text": "Bonjour, bienvenue aux ateliers multimédia ! Un membre du personnel va arriver dans quelques instants. Veuillez patienter !"
   }
 ]
