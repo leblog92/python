@@ -24,5 +24,9 @@
   {
     "id": 9,
     "text": "Bonjour, bienvenue aux ateliers multimédia ! Un membre du personnel va arriver dans quelques instants. Veuillez patienter !"
+  },
+  {
+    "id": 10,
+    "text": "Bouh !"
   }
 ]
