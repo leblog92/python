@@ -636,19 +636,6 @@ def upload_mp3():
     return jsonify({"status": "ok", "filename": safe_name})
 
 
-# ── MP3 : liste ──────────────────────────────
-@app.route('/list_mp3')
-def list_mp3():
-    """Retourne la liste des fichiers audio disponibles."""
-    try:
-        files = [f for f in os.listdir(MP3_DIR)
-                 if f.lower().endswith(('.mp3', '.wav', '.ogg'))]
-        files.sort()
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-    return jsonify({"status": "ok", "files": files})
-
-
 # ── MP3 : lecture ─────────────────────────────
 @app.route('/play_mp3', methods=['POST'])
 def play_mp3():
@@ -679,6 +666,247 @@ def stop_audio():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
+
+# ── MP3 : renommer ───────────────────────────
+@app.route('/rename_mp3', methods=['POST'])
+def rename_mp3():
+    data = request.get_json(silent=True) or {}
+    old_name = data.get('old_name', '').strip()
+    new_name = data.get('new_name', '').strip()
+    if not old_name or not new_name:
+        return jsonify({"status": "error", "message": "Noms manquants"}), 400
+    old_path = os.path.join(MP3_DIR, os.path.basename(old_name))
+    new_path = os.path.join(MP3_DIR, os.path.basename(new_name))
+    if not os.path.exists(old_path):
+        return jsonify({"status": "error", "message": "Fichier introuvable"}), 404
+    if os.path.exists(new_path):
+        return jsonify({"status": "error", "message": "Ce nom existe déjà"}), 409
+    try:
+        os.rename(old_path, new_path)
+        log.info(f"[AUDIO] Renommé : {old_name} → {new_name}")
+        return jsonify({"status": "ok", "old_name": old_name, "new_name": new_name})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ── MP3 : supprimer ───────────────────────────
+@app.route('/delete_mp3', methods=['POST'])
+def delete_mp3():
+    data = request.get_json(silent=True) or {}
+    filename = data.get('filename', '').strip()
+    if not filename:
+        return jsonify({"status": "error", "message": "Nom manquant"}), 400
+    path = os.path.join(MP3_DIR, os.path.basename(filename))
+    if not os.path.exists(path):
+        return jsonify({"status": "error", "message": "Fichier introuvable"}), 404
+    try:
+        os.remove(path)
+        log.info(f"[AUDIO] Supprimé : {filename}")
+        return jsonify({"status": "ok", "filename": filename})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ── MP3 : libellés personnalisés ─────────────
+MP3_LABELS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mp3_labels.json')
+
+def _load_mp3_labels():
+    try:
+        if os.path.exists(MP3_LABELS_FILE):
+            with open(MP3_LABELS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def _save_mp3_labels(labels):
+    try:
+        with open(MP3_LABELS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(labels, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.error(f"[AUDIO] Sauvegarde libellés échouée : {e}")
+
+@app.route('/mp3_labels', methods=['GET'])
+def get_mp3_labels():
+    return jsonify({"labels": _load_mp3_labels()})
+
+@app.route('/mp3_labels', methods=['POST'])
+def set_mp3_label():
+    data = request.get_json(silent=True) or {}
+    filename = data.get('filename', '').strip()
+    label    = data.get('label', '').strip()
+    if not filename:
+        return jsonify({"status": "error", "message": "Nom manquant"}), 400
+    labels = _load_mp3_labels()
+    if label:
+        labels[filename] = label
+    else:
+        labels.pop(filename, None)
+    _save_mp3_labels(labels)
+    return jsonify({"status": "ok", "labels": labels})
+
+
+# ── MP3 : ordre personnalisé ──────────────────
+MP3_ORDER_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mp3_order.json')
+
+def _load_mp3_order():
+    try:
+        if os.path.exists(MP3_ORDER_FILE):
+            with open(MP3_ORDER_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return []
+
+def _save_mp3_order(order):
+    try:
+        with open(MP3_ORDER_FILE, 'w', encoding='utf-8') as f:
+            json.dump(order, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.error(f"[AUDIO] Sauvegarde ordre échouée : {e}")
+
+@app.route('/mp3_order', methods=['POST'])
+def set_mp3_order():
+    data = request.get_json(silent=True) or {}
+    order = data.get('order', [])
+    _save_mp3_order(order)
+    return jsonify({"status": "ok"})
+
+@app.route('/list_mp3')
+def list_mp3():
+    """Retourne la liste des fichiers audio disponibles, triée selon l'ordre sauvegardé."""
+    try:
+        files = [f for f in os.listdir(MP3_DIR)
+                 if f.lower().endswith(('.mp3', '.wav', '.ogg'))]
+        saved_order = _load_mp3_order()
+        # Fichiers présents dans l'ordre sauvegardé d'abord, puis les nouveaux alphabétiquement
+        ordered = [f for f in saved_order if f in files]
+        rest    = sorted([f for f in files if f not in ordered])
+        files   = ordered + rest
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({"status": "ok", "files": files})
+
+
+# ── Timer VGT ────────────────────────────────
+import pytz
+
+TIMER_SCHEDULE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'timer_schedule.json')
+
+_timer_default_schedule = [
+    {"time": "14:00", "file": "start.mp3"},
+    {"time": "14:45", "file": "45.mp3"},
+    {"time": "14:50", "file": "50.mp3"},
+    {"time": "14:55", "file": "55.mp3"},
+    {"time": "14:58", "file": "58.mp3"},
+    {"time": "15:45", "file": "45.mp3"},
+    {"time": "15:50", "file": "50.mp3"},
+    {"time": "15:55", "file": "55.mp3"},
+    {"time": "15:58", "file": "58.mp3"},
+    {"time": "16:45", "file": "45.mp3"},
+    {"time": "16:50", "file": "50.mp3"},
+    {"time": "16:55", "file": "55.mp3"},
+    {"time": "16:58", "file": "58.mp3"},
+    {"time": "17:45", "file": "45.mp3"},
+    {"time": "17:50", "file": "50.mp3"},
+    {"time": "17:55", "file": "55.mp3"},
+    {"time": "17:58", "file": "end.mp3"},
+]
+
+timer_enabled    = False
+timer_fired_set  = set()   # horaires déjà déclenchés aujourd'hui
+timer_lock       = threading.Lock()
+timer_log_list   = []      # historique pour l'UI
+
+def _load_timer_schedule():
+    try:
+        if os.path.exists(TIMER_SCHEDULE_FILE):
+            with open(TIMER_SCHEDULE_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return list(_timer_default_schedule)
+
+def _save_timer_schedule(schedule):
+    try:
+        with open(TIMER_SCHEDULE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(schedule, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.error(f"[TIMER] Sauvegarde planning échouée : {e}")
+
+def _timer_loop():
+    global timer_fired_set
+    paris = pytz.timezone('Europe/Paris')
+    last_day = None
+    while True:
+        try:
+            now      = datetime.datetime.now(paris)
+            today    = now.strftime("%Y-%m-%d")
+            hm       = now.strftime("%H:%M")
+            if last_day != today:
+                timer_fired_set = set()
+                last_day = today
+            with timer_lock:
+                enabled = timer_enabled
+            if enabled:
+                schedule = _load_timer_schedule()
+                for entry in schedule:
+                    t = entry.get('time', '')
+                    f = entry.get('file', '')
+                    if t == hm and t not in timer_fired_set:
+                        path = os.path.join(MP3_DIR, os.path.basename(f))
+                        if os.path.exists(path):
+                            log.info(f"[TIMER] {t} → {f}")
+                            play_mp3_file(path)
+                        else:
+                            log.warning(f"[TIMER] Fichier introuvable : {f}")
+                        timer_fired_set.add(t)
+                        timer_log_list.append({"time": t, "file": f,
+                                               "ts": now.strftime("%H:%M:%S")})
+                        if len(timer_log_list) > 100:
+                            timer_log_list.pop(0)
+        except Exception as e:
+            log.error(f"[TIMER] Erreur boucle : {e}")
+        time.sleep(15)
+
+threading.Thread(target=_timer_loop, daemon=True).start()
+
+@app.route('/timer/status')
+def timer_status():
+    schedule = _load_timer_schedule()
+    return jsonify({
+        "enabled": timer_enabled,
+        "schedule": schedule,
+        "log": timer_log_list[-20:],
+        "fired": list(timer_fired_set),
+    })
+
+@app.route('/timer/toggle', methods=['POST'])
+def timer_toggle():
+    global timer_enabled
+    with timer_lock:
+        timer_enabled = not timer_enabled
+    log.info(f"[TIMER] {'Activé' if timer_enabled else 'Désactivé'}")
+    return jsonify({"status": "ok", "enabled": timer_enabled})
+
+@app.route('/timer/schedule', methods=['POST'])
+def timer_set_schedule():
+    data = request.get_json(silent=True) or {}
+    schedule = data.get('schedule', [])
+    _save_timer_schedule(schedule)
+    return jsonify({"status": "ok"})
+
+@app.route('/timer/reset', methods=['POST'])
+def timer_reset():
+    _save_timer_schedule(list(_timer_default_schedule))
+    return jsonify({"status": "ok", "schedule": _timer_default_schedule})
+
+@app.route('/timer/fired_reset', methods=['POST'])
+def timer_fired_reset():
+    global timer_fired_set
+    timer_fired_set = set()
+    return jsonify({"status": "ok"})
 
 
 # ── Captures mouvement ───────────────────────
@@ -769,6 +997,7 @@ def audio_stream():
     )
 
 
+
 @app.route('/')
 def index():
     ip = get_local_ip()
@@ -786,6 +1015,7 @@ def index():
     --accent: #4f8ef7;
     --accent2: #3ecf8e;
     --red: #e35b5b;
+    --orange: #f0a500;
     --text: #e8e8e8;
     --muted: #888;
   }}
@@ -796,15 +1026,16 @@ def index():
     background:var(--surface);
     border-bottom:1px solid var(--border);
     padding:14px 28px;
-    display:flex; align-items:center; gap:12px;
+    display:flex; align-items:center; justify-content:space-between;
   }}
+  .header-left {{ display:flex; align-items:center; gap:12px; }}
   header h1 {{ font-size:1.1rem; font-weight:600; letter-spacing:.05em; }}
   .dot {{ width:9px; height:9px; border-radius:50%; background:var(--accent2); box-shadow:0 0 6px var(--accent2); animation:pulse 2s infinite; }}
   @keyframes pulse {{ 0%,100%{{opacity:1}} 50%{{opacity:.4}} }}
 
   .layout {{
     display:grid;
-    grid-template-columns: 1fr 380px;
+    grid-template-columns: 1fr 420px;
     gap:0;
     height:calc(100vh - 57px);
   }}
@@ -813,41 +1044,62 @@ def index():
   .video-panel {{
     background:#000;
     display:flex; align-items:center; justify-content:center;
-    overflow:hidden;
+    overflow:hidden; position:relative;
   }}
   .video-panel img {{ width:100%; height:100%; object-fit:contain; }}
+  .pip-btn {{
+    position:absolute; bottom:12px; right:12px;
+    background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.2);
+    color:#fff; border-radius:8px; padding:6px 12px; font-size:.78rem;
+    cursor:pointer; backdrop-filter:blur(4px); z-index:10;
+    transition:background .2s;
+  }}
+  .pip-btn:hover {{ background:rgba(79,142,247,.6); }}
 
   /* ── Panneau de contrôle ── */
   .ctrl-panel {{
     background:var(--surface);
     border-left:1px solid var(--border);
-    padding:20px;
-    display:flex; flex-direction:column; gap:20px;
-    overflow-y:auto;
+    display:flex; flex-direction:column;
+    overflow:hidden;
   }}
+  /* Onglets */
+  .tabs {{
+    display:flex; border-bottom:1px solid var(--border); flex-shrink:0;
+  }}
+  .tab {{
+    flex:1; padding:10px 4px; font-size:.75rem; text-align:center;
+    cursor:pointer; color:var(--muted); border-bottom:2px solid transparent;
+    transition:color .15s, border-color .15s; white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis;
+  }}
+  .tab.active {{ color:var(--accent); border-bottom-color:var(--accent); }}
+  .tab-content {{ display:none; flex-direction:column; gap:16px; overflow-y:auto;
+                  padding:16px; flex:1;
+                  scrollbar-width:thin; scrollbar-color:var(--border) transparent; }}
+  .tab-content.active {{ display:flex; }}
 
   .card {{
     background:var(--bg);
     border:1px solid var(--border);
     border-radius:10px;
-    padding:16px;
+    padding:14px;
   }}
   .card h2 {{
-    font-size:.8rem; text-transform:uppercase; letter-spacing:.1em;
-    color:var(--muted); margin-bottom:12px; display:flex; align-items:center; gap:6px;
+    font-size:.78rem; text-transform:uppercase; letter-spacing:.1em;
+    color:var(--muted); margin-bottom:10px; display:flex; align-items:center; gap:6px;
   }}
-  .card h2 svg {{ flex-shrink:0; }}
 
   textarea, input[type=text] {{
     width:100%; background:#111; border:1px solid var(--border); border-radius:6px;
-    color:var(--text); padding:10px; font-size:.9rem; resize:vertical;
+    color:var(--text); padding:9px; font-size:.88rem; resize:vertical;
     outline:none; transition:border .2s;
   }}
   textarea:focus, input[type=text]:focus {{ border-color:var(--accent); }}
 
   .btn {{
-    display:inline-flex; align-items:center; justify-content:center; gap:6px;
-    padding:9px 16px; border:none; border-radius:6px; font-size:.88rem;
+    display:inline-flex; align-items:center; justify-content:center; gap:5px;
+    padding:8px 14px; border:none; border-radius:6px; font-size:.84rem;
     cursor:pointer; font-weight:600; transition:opacity .15s, transform .1s;
     white-space:nowrap;
   }}
@@ -857,39 +1109,19 @@ def index():
   .btn-success {{ background:var(--accent2); color:#000; }}
   .btn-danger  {{ background:var(--red); color:#fff; }}
   .btn-ghost   {{ background:var(--border); color:var(--text); }}
-  .btn-row {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }}
+  .btn-orange  {{ background:var(--orange); color:#000; }}
+  .btn-row {{ display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }}
+
+  select {{
+    width:100%; background:#111; border:1px solid var(--border); border-radius:6px;
+    color:var(--text); padding:8px 10px; font-size:.84rem; outline:none; cursor:pointer;
+    transition:border .2s; margin-bottom:8px;
+  }}
+  select:focus {{ border-color:var(--accent); }}
 
   /* ── Phrases rapides ── */
-  .quick-btns {{ display:flex; flex-direction:column; gap:6px; }}
-  .quick-btn {{
-    background:#111; border:1px solid var(--border); border-radius:6px;
-    color:var(--text); padding:8px 12px; font-size:.82rem; cursor:pointer;
-    text-align:left; transition:border .2s, background .2s;
-  }}
-  .quick-btn:hover {{ border-color:var(--accent); background:#1a1a2e; }}
-
-  /* ── Liste MP3 ── */
-  #mp3List {{ list-style:none; display:flex; flex-direction:column; gap:6px; max-height:180px; overflow-y:auto; }}
-  #mp3List li {{
-    display:flex; align-items:center; justify-content:space-between;
-    background:#111; border:1px solid var(--border); border-radius:6px; padding:8px 10px;
-    font-size:.83rem;
-  }}
-  #mp3List li button {{ font-size:.78rem; padding:4px 10px; }}
-
-  /* ── Upload ── */
-  .upload-area {{
-    border:2px dashed var(--border); border-radius:8px; padding:8px;
-    text-align:center; cursor:pointer; font-size:.83rem; color:var(--muted);
-    transition:border .2s;
-  }}
-  .upload-area:hover {{ border-color:var(--accent); color:var(--text); }}
-  input[type=file] {{ display:none; }}
-
-  /* ── Phrases rapides ── */
-  .quick-btns {{ display:flex; flex-direction:column; gap:5px; max-height:220px; overflow-y:auto;
-                scrollbar-width:thin; scrollbar-color:var(--border) transparent; }}
-  .quick-item {{ display:flex; align-items:center; gap:6px; }}
+  .quick-btns {{ display:flex; flex-direction:column; gap:5px; }}
+  .quick-item {{ display:flex; align-items:center; gap:5px; }}
   .quick-btn {{
     flex:1; background:#111; border:1px solid var(--border); border-radius:6px;
     color:var(--text); padding:7px 10px; font-size:.82rem; cursor:pointer;
@@ -898,216 +1130,288 @@ def index():
   }}
   .quick-btn:hover {{ border-color:var(--accent); background:#1a1a2e; }}
   .quick-del {{ background:none; border:none; color:var(--muted); cursor:pointer;
-               font-size:.9rem; padding:2px 6px; flex-shrink:0; line-height:1; }}
+               font-size:.9rem; padding:2px 5px; flex-shrink:0; }}
   .quick-del:hover {{ color:var(--red); }}
-  select {{
-    width:100%; background:#111; border:1px solid var(--border); border-radius:6px;
-    color:var(--text); padding:8px 10px; font-size:.85rem; outline:none; cursor:pointer;
-    transition:border .2s; margin-bottom:8px;
-  }}
-  select:focus {{ border-color:var(--accent); }}
 
-  /* ── Menu sections ── */
-  .menu-overlay {{ display:none; position:fixed; inset:0; z-index:200; }}
-  .menu-overlay.open {{ display:block; }}
-  .menu-panel {{
-    position:absolute; top:50px; right:16px; width:230px;
-    background:var(--surface); border:1px solid var(--border); border-radius:10px;
-    padding:10px 0; box-shadow:0 8px 32px #0008;
+  /* ── Lecteur MP3 amélioré ── */
+  #mp3List {{ list-style:none; display:flex; flex-direction:column; gap:5px; }}
+  .mp3-item {{
+    background:#111; border:1px solid var(--border); border-radius:7px;
+    padding:8px 10px; cursor:grab; transition:border .15s, background .15s;
   }}
-  .menu-title {{ font-size:.72rem; text-transform:uppercase; letter-spacing:.1em;
-                color:var(--muted); padding:6px 16px 4px; }}
-  .menu-item {{ display:flex; align-items:center; justify-content:space-between;
-               padding:9px 16px; font-size:.85rem; cursor:pointer; transition:background .15s; }}
-  .menu-item:hover {{ background:#ffffff0d; }}
-  .menu-item span {{ color:var(--text); }}
-  .menu-toggle {{ width:32px; height:18px; border-radius:9px; background:#333;
-                 position:relative; transition:background .2s; flex-shrink:0; }}
-  .menu-toggle.on {{ background:var(--accent); }}
-  .menu-toggle::after {{ content:''; width:14px; height:14px; border-radius:50%;
-    background:#fff; position:absolute; top:2px; left:2px; transition:left .2s; }}
-  .menu-toggle.on::after {{ left:16px; }}
-  .menu-btn {{ background:none; border:none; color:var(--text); cursor:pointer;
-              font-size:1.2rem; padding:4px 8px; border-radius:6px; transition:background .15s; }}
-  .menu-btn:hover {{ background:#ffffff15; }}
+  .mp3-item:hover {{ border-color:var(--accent); }}
+  .mp3-item.dragging {{ opacity:.45; border-color:var(--accent2); cursor:grabbing; }}
+  .mp3-item.drag-over {{ border-color:var(--accent2); background:#1a2e1a; }}
+  .mp3-row1 {{ display:flex; align-items:center; gap:6px; }}
+  .mp3-handle {{ color:var(--muted); font-size:1rem; cursor:grab; user-select:none; flex-shrink:0; }}
+  .mp3-label {{ flex:1; font-size:.82rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .mp3-alias {{ font-size:.76rem; color:var(--muted); margin-top:2px; }}
+  .mp3-row2 {{ display:flex; gap:5px; margin-top:7px; }}
+  .mp3-row2 button {{ font-size:.75rem; padding:4px 9px; }}
+
+  /* ── Upload ── */
+  .upload-area {{
+    border:2px dashed var(--border); border-radius:8px; padding:12px;
+    text-align:center; cursor:pointer; font-size:.82rem; color:var(--muted);
+    transition:border .2s;
+  }}
+  .upload-area:hover {{ border-color:var(--accent); color:var(--text); }}
+  input[type=file] {{ display:none; }}
+
+  /* ── Timer VGT ── */
+  .timer-header {{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }}
+  .timer-clock {{ font-size:1.6rem; font-weight:700; font-family:monospace; color:var(--accent2); }}
+  .toggle-pill {{
+    width:44px; height:24px; border-radius:12px; background:#333;
+    position:relative; cursor:pointer; transition:background .2s; flex-shrink:0;
+  }}
+  .toggle-pill.on {{ background:var(--accent2); }}
+  .toggle-pill::after {{ content:''; width:18px; height:18px; border-radius:50%;
+    background:#fff; position:absolute; top:3px; left:3px; transition:left .2s; }}
+  .toggle-pill.on::after {{ left:23px; }}
+  .timer-table {{ width:100%; border-collapse:collapse; font-size:.8rem; }}
+  .timer-table th {{ color:var(--muted); text-align:left; padding:4px 6px;
+                     border-bottom:1px solid var(--border); font-weight:500; }}
+  .timer-table td {{ padding:5px 6px; border-bottom:1px solid #1e1e1e; }}
+  .timer-table tr:last-child td {{ border-bottom:none; }}
+  .timer-table input {{ background:#111; border:1px solid var(--border); border-radius:4px;
+                        color:var(--text); padding:3px 6px; font-size:.78rem; outline:none; }}
+  .timer-table input:focus {{ border-color:var(--accent); }}
+  .timer-del {{ background:none; border:none; color:var(--muted); cursor:pointer; font-size:.85rem; }}
+  .timer-del:hover {{ color:var(--red); }}
+  .timer-log {{ max-height:100px; overflow-y:auto; font-size:.75rem; color:var(--muted);
+                font-family:monospace; margin-top:6px;
+                scrollbar-width:thin; scrollbar-color:var(--border) transparent; }}
+  .timer-log div {{ padding:2px 0; }}
+  .timer-badge {{
+    display:inline-block; padding:2px 8px; border-radius:10px; font-size:.72rem;
+    font-weight:700; margin-left:6px;
+  }}
+  .timer-badge.on  {{ background:#1a2e1a; color:var(--accent2); border:1px solid var(--accent2); }}
+  .timer-badge.off {{ background:#2e1a1a; color:var(--red);     border:1px solid var(--red); }}
+
+  /* ── Rename modal ── */
+  .modal-overlay {{
+    display:none; position:fixed; inset:0; z-index:500;
+    background:rgba(0,0,0,.7); backdrop-filter:blur(3px);
+    align-items:center; justify-content:center;
+  }}
+  .modal-overlay.open {{ display:flex; }}
+  .modal-box {{
+    background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:24px; width:360px; max-width:90vw;
+  }}
+  .modal-box h3 {{ font-size:.9rem; margin-bottom:14px; color:var(--text); }}
+  .modal-box input {{ margin-bottom:12px; }}
+  .modal-btns {{ display:flex; gap:8px; justify-content:flex-end; }}
 
   /* ── Toast ── */
   #toast {{
     position:fixed; bottom:20px; right:20px; z-index:999;
     background:#222; border:1px solid var(--border); border-radius:8px;
-    padding:10px 18px; font-size:.85rem; opacity:0; pointer-events:none;
-    transition:opacity .3s; max-width:280px;
+    padding:10px 18px; font-size:.84rem; opacity:0; pointer-events:none;
+    transition:opacity .3s; max-width:300px;
   }}
   #toast.show {{ opacity:1; }}
-  #toast.ok {{ border-color:var(--accent2); color:var(--accent2); }}
-  #toast.err {{ border-color:var(--red); color:var(--red); }}
+  #toast.ok  {{ border-color:var(--accent2); color:var(--accent2); }}
+  #toast.err {{ border-color:var(--red);     color:var(--red); }}
 </style>
 </head>
 <body>
 
-<header style="justify-content:space-between">
-  <div style="display:flex;align-items:center;gap:12px">
+<header>
+  <div class="header-left">
     <div class="dot"></div>
     <h1>SALLE JVO – Surveillance &amp; Diffusion</h1>
   </div>
-  <button class="menu-btn" onclick="toggleMenu()" title="Afficher/masquer les sections">☰</button>
 </header>
-
-<!-- Menu sections -->
-<div class="menu-overlay" id="menuOverlay" onclick="closeMenu()">
-  <div class="menu-panel" onclick="event.stopPropagation()">
-    <div class="menu-title">Sections visibles</div>
-    <div class="menu-item" onclick="toggleSection('cardCaptures')">
-      <span>Captures mouvement</span>
-      <div class="menu-toggle on" id="tog-cardCaptures"></div>
-    </div>
-    <div class="menu-item" onclick="toggleSection('cardQuality')">
-      <span>Qualité vidéo</span>
-      <div class="menu-toggle on" id="tog-cardQuality"></div>
-    </div>
-    <div class="menu-item" onclick="toggleSection('cardTTS')">
-      <span>Synthèse vocale</span>
-      <div class="menu-toggle on" id="tog-cardTTS"></div>
-    </div>
-    <div class="menu-item" onclick="toggleSection('cardPhrases')">
-      <span>Phrases rapides</span>
-      <div class="menu-toggle on" id="tog-cardPhrases"></div>
-    </div>
-    <div class="menu-item" onclick="toggleSection('cardListen')">
-      <span>Écoute en direct</span>
-      <div class="menu-toggle on" id="tog-cardListen"></div>
-    </div>
-    <div class="menu-item" onclick="toggleSection('cardUpload')">
-      <span>Upload audio</span>
-      <div class="menu-toggle on" id="tog-cardUpload"></div>
-    </div>
-    <div class="menu-item" onclick="toggleSection('cardPlayer')">
-      <span>Lecteur MP3</span>
-      <div class="menu-toggle on" id="tog-cardPlayer"></div>
-    </div>
-  </div>
-</div>
 
 <div class="layout">
   <!-- Flux vidéo -->
   <div class="video-panel">
     <img id="videoFeed" src="/video_feed" alt="Flux vidéo">
+    <button class="pip-btn" onclick="togglePiP()" id="pipBtn">⧉ Mode PiP</button>
   </div>
 
-  <!-- Panneau de contrôle -->
+  <!-- Panneau onglets -->
   <div class="ctrl-panel">
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('tts')"    id="tab-tts">🔊 TTS</div>
+      <div class="tab"        onclick="switchTab('mp3')"    id="tab-mp3">🎵 MP3</div>
+      <div class="tab"        onclick="switchTab('timer')"  id="tab-timer">⏱ Timer</div>
+      <div class="tab"        onclick="switchTab('cam')"    id="tab-cam">📷 Caméra</div>
+      <div class="tab"        onclick="switchTab('listen')" id="tab-listen">🎧 Écoute</div>
+    </div>
 
-    <!-- Captures mouvement -->
-    <div class="card" id="cardCaptures">
-      <h2>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
-        Captures mouvement
-      </h2>
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <span style="font-size:.82rem;color:var(--muted)" id="captureStatus">Désactivées</span>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <div id="captureToggle" onclick="toggleCaptures()"
-               style="width:36px;height:20px;border-radius:10px;background:#333;
-                      position:relative;cursor:pointer;transition:background .2s">
-            <div id="captureThumb"
-                 style="width:16px;height:16px;border-radius:50%;background:#888;
-                        position:absolute;top:2px;left:2px;transition:all .2s"></div>
-          </div>
+    <!-- ═══ ONGLET TTS ═══ -->
+    <div class="tab-content active" id="pane-tts">
+      <div class="card">
+        <h2>Voix</h2>
+        <select id="voiceSelect" onchange="setVoice(this.value)">
+          <option value="">Chargement…</option>
+        </select>
+      </div>
+      <div class="card">
+        <h2>Message libre</h2>
+        <textarea id="ttsText" rows="3" placeholder="Tapez votre message…"></textarea>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="sendTTS()">▶ Lire</button>
+          <button class="btn btn-ghost"   onclick="document.getElementById('ttsText').value=''">Effacer</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Phrases rapides</h2>
+        <div class="quick-btns" id="quickBtns"></div>
+        <div style="display:flex;gap:6px;margin-top:10px">
+          <input type="text" id="newPhrase" placeholder="Nouvelle phrase…"
+                 style="flex:1;padding:7px 9px;font-size:.82rem"
+                 onkeydown="if(event.key==='Enter') addPhrase()">
+          <button class="btn btn-success" onclick="addPhrase()" style="padding:7px 12px">＋</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ ONGLET MP3 ═══ -->
+    <div class="tab-content" id="pane-mp3">
+      <div class="card">
+        <h2>Ajouter un fichier audio</h2>
+        <label class="upload-area" for="mp3Input" id="dropZone">
+          📂 Cliquez ou déposez MP3 / WAV / OGG
         </label>
+        <input type="file" id="mp3Input" accept=".mp3,.wav,.ogg" onchange="uploadMP3(this.files[0])">
+      </div>
+      <div class="card">
+        <h2 style="justify-content:space-between">
+          <span>Bibliothèque audio</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost" style="font-size:.72rem;padding:3px 8px" onclick="loadMP3List()">↺</button>
+            <button class="btn btn-danger" style="font-size:.72rem;padding:3px 8px" onclick="stopAudio()">■ Stop</button>
+          </div>
+        </h2>
+        <p style="font-size:.75rem;color:var(--muted);margin-bottom:8px">
+          Glissez les ☰ pour réordonner · ✎ pour renommer · 🗑 pour supprimer
+        </p>
+        <ul id="mp3List"><li style="color:var(--muted);font-size:.82rem">Chargement…</li></ul>
       </div>
     </div>
 
-    <!-- Qualité vidéo -->
-    <div class="card" id="cardQuality">
-      <h2>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-        Qualité vidéo
-      </h2>
-      <div class="btn-row" id="qualityBtns">
-        <button class="btn btn-ghost" id="q-hd"     onclick="setQuality('hd')">HD</button>
-        <button class="btn btn-success" id="q-medium" onclick="setQuality('medium')">Moyen</button>
-        <button class="btn btn-ghost" id="q-low"   onclick="setQuality('low')">Éco</button>
+    <!-- ═══ ONGLET TIMER ═══ -->
+    <div class="tab-content" id="pane-timer">
+      <div class="card">
+        <div class="timer-header">
+          <div>
+            <div class="timer-clock" id="timerClock">--:--:--</div>
+            <div style="font-size:.75rem;color:var(--muted);margin-top:2px">
+              Timer automatique
+              <span class="timer-badge off" id="timerBadge">OFF</span>
+            </div>
+          </div>
+          <div class="toggle-pill" id="timerPill" onclick="timerToggle()"></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-ghost"   style="font-size:.76rem" onclick="timerFiredReset()">↺ Réarmer</button>
+          <button class="btn btn-ghost"   style="font-size:.76rem" onclick="timerReset()">Défaut</button>
+          <button class="btn btn-success" style="font-size:.76rem" onclick="timerAddRow()">＋ Entrée</button>
+        </div>
       </div>
-      <div style="margin-top:8px;font-size:.78rem;color:var(--muted)" id="qualityLabel">640×360 · ~4 Mbit/s</div>
-    </div>
-
-    <!-- TTS -->
-    <div class="card" id="cardTTS">
-      <h2>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-        Synthèse vocale (TTS)
-      </h2>
-      <select id="voiceSelect" onchange="setVoice(this.value)">
-        <option value="">Chargement des voix…</option>
-      </select>
-      <textarea id="ttsText" rows="3" placeholder="Tapez votre message ici…"></textarea>
-      <div class="btn-row">
-        <button class="btn btn-primary" onclick="sendTTS()">▶ Lire</button>
-        <button class="btn btn-ghost" onclick="document.getElementById('ttsText').value=''">Effacer</button>
+      <div class="card">
+        <h2>Planning</h2>
+        <table class="timer-table">
+          <thead><tr><th>Heure</th><th>Fichier MP3</th><th></th></tr></thead>
+          <tbody id="timerBody"></tbody>
+        </table>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn btn-primary" onclick="timerSave()">💾 Sauvegarder</button>
+        </div>
       </div>
-    </div>
-
-    <!-- Phrases rapides -->
-    <div class="card" id="cardPhrases">
-      <h2>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        Phrases rapides
-      </h2>
-      <div class="quick-btns" id="quickBtns"></div>
-      <div style="display:flex;gap:6px;margin-top:10px">
-        <input type="text" id="newPhrase" placeholder="Nouvelle phrase…"
-               style="flex:1;padding:7px 9px;font-size:.82rem"
-               onkeydown="if(event.key==='Enter') addPhrase()">
-        <button class="btn btn-success" onclick="addPhrase()" style="padding:7px 12px">＋</button>
+      <div class="card">
+        <h2>Historique</h2>
+        <div class="timer-log" id="timerLog"><span style="color:var(--muted)">Aucun rappel aujourd'hui.</span></div>
       </div>
     </div>
 
-    <!-- Écoute en direct -->
-    <div class="card" id="cardListen">
-      <h2>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
-        Écoute en direct
-      </h2>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <div id="audioIndicator" style="width:10px;height:10px;border-radius:50%;background:#444;flex-shrink:0;transition:background .15s"></div>
-        <span id="audioStatus" style="font-size:.82rem;color:var(--muted)">Non connecté</span>
+    <!-- ═══ ONGLET CAMÉRA ═══ -->
+    <div class="tab-content" id="pane-cam">
+      <div class="card">
+        <h2>Qualité vidéo</h2>
+        <div class="btn-row" id="qualityBtns">
+          <button class="btn btn-ghost"   id="q-hd"     onclick="setQuality('hd')">HD</button>
+          <button class="btn btn-success" id="q-medium" onclick="setQuality('medium')">Moyen</button>
+          <button class="btn btn-ghost"   id="q-low"    onclick="setQuality('low')">Éco</button>
+        </div>
+        <div style="margin-top:8px;font-size:.76rem;color:var(--muted)" id="qualityLabel">640×360 · ~4 Mbit/s</div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <label style="font-size:.82rem;color:var(--muted);white-space:nowrap">Volume</label>
-        <input type="range" id="listenVolume" min="0" max="2" step="0.05" value="1"
-               style="flex:1;accent-color:var(--accent)">
-        <span id="volLabel" style="font-size:.78rem;color:var(--muted);width:32px;text-align:right">100%</span>
+      <div class="card">
+        <h2>Captures mouvement</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:.82rem;color:var(--muted)" id="captureStatus">Désactivées</span>
+          <div id="captureToggle" onclick="toggleCaptures()" class="toggle-pill"></div>
+        </div>
       </div>
-      <div class="btn-row">
-        <button class="btn btn-primary" id="btnListen" onclick="toggleListen()">🎧 Écouter</button>
+      <div class="card">
+        <h2>PiP – Fenêtre flottante</h2>
+        <p style="font-size:.78rem;color:var(--muted);margin-bottom:10px">
+          Lance la vidéo dans une fenêtre Picture-in-Picture redimensionnable, toujours au-dessus.
+        </p>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <label style="font-size:.82rem;color:var(--muted)">Largeur initiale</label>
+          <input type="range" id="pipWidth"  min="200" max="900" step="10" value="480"
+                 style="flex:1;accent-color:var(--accent)">
+          <span id="pipWidthLabel" style="font-size:.78rem;color:var(--muted);width:50px">480 px</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <label style="font-size:.82rem;color:var(--muted)">Hauteur initiale</label>
+          <input type="range" id="pipHeight" min="120" max="600" step="10" value="270"
+                 style="flex:1;accent-color:var(--accent)">
+          <span id="pipHeightLabel" style="font-size:.78rem;color:var(--muted);width:50px">270 px</span>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="openPiPWindow()" id="pipOpenBtn">⧉ Ouvrir PiP</button>
+          <button class="btn btn-ghost"   onclick="closePiPWindow()" id="pipCloseBtn" style="display:none">✕ Fermer PiP</button>
+        </div>
+        <p style="font-size:.72rem;color:var(--muted);margin-top:8px">
+          💡 Redimensionnez la fenêtre librement après ouverture.
+        </p>
       </div>
     </div>
 
-    <!-- Upload MP3 -->
-    <div class="card" id="cardUpload">
-      <h2>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        Ajouter un fichier audio
-      </h2>
-      <label class="upload-area" for="mp3Input" id="dropZone">
-        📂 Cliquez ou déposez MP3 / WAV
-      </label>
-      <input type="file" id="mp3Input" accept=".mp3,.wav,.ogg" onchange="uploadMP3(this.files[0])">
-    </div>
-
-    <!-- Lecteur MP3 -->
-    <div class="card" id="cardPlayer">
-      <h2>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
-        Fichiers audio
-      </h2>
-      <ul id="mp3List"><li style="color:var(--muted);font-size:.82rem">Chargement…</li></ul>
-      <div class="btn-row" style="margin-top:12px">
-        <button class="btn btn-danger" onclick="stopAudio()">■ Stop</button>
-        <button class="btn btn-ghost" onclick="loadMP3List()">↺ Actualiser</button>
+    <!-- ═══ ONGLET ÉCOUTE ═══ -->
+    <div class="tab-content" id="pane-listen">
+      <div class="card">
+        <h2>Écoute en direct (micro salle)</h2>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div id="audioIndicator" style="width:10px;height:10px;border-radius:50%;background:#444;flex-shrink:0"></div>
+          <span id="audioStatus" style="font-size:.82rem;color:var(--muted)">Non connecté</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <label style="font-size:.82rem;color:var(--muted);white-space:nowrap">Volume</label>
+          <input type="range" id="listenVolume" min="0" max="2" step="0.05" value="1"
+                 style="flex:1;accent-color:var(--accent)">
+          <span id="volLabel" style="font-size:.78rem;color:var(--muted);width:36px;text-align:right">100%</span>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btnListen" onclick="toggleListen()">🎧 Écouter</button>
+        </div>
       </div>
     </div>
 
+  </div><!-- .ctrl-panel -->
+</div><!-- .layout -->
+
+<!-- ── Modal Renommer MP3 ── -->
+<div class="modal-overlay" id="renameModal">
+  <div class="modal-box">
+    <h3>✎ Renommer le fichier audio</h3>
+    <input type="text" id="renameOld" readonly style="color:var(--muted);margin-bottom:12px">
+    <input type="text" id="renameNew" placeholder="Nouveau nom du fichier…">
+    <div style="font-size:.75rem;color:var(--muted);margin-bottom:10px">
+      Le libellé affiché peut être différent du nom de fichier.
+    </div>
+    <input type="text" id="renameAlias" placeholder="Libellé affiché (optionnel)…">
+    <div class="modal-btns">
+      <button class="btn btn-ghost"   onclick="closeRenameModal()">Annuler</button>
+      <button class="btn btn-primary" onclick="confirmRename()">Renommer</button>
+    </div>
   </div>
 </div>
 
@@ -1116,216 +1420,21 @@ def index():
 <script>
 const SERVER = 'http://{ip}:5000';
 
-// ── Écoute micro en direct (Web Audio API + SSE) ─────
-let audioCtx    = null;
-let gainNode    = null;
-let audioSSE    = null;
-let listening   = false;
-let sampleRate  = 44100;
-let nextTime    = 0;          // horloge de planification
-const AHEAD_SEC = 0.10;       // buffer d'anticipation (100 ms)
-
-document.getElementById('listenVolume').addEventListener('input', function() {{
-  const pct = Math.round(this.value * 100);
-  document.getElementById('volLabel').textContent = pct + '%';
-  if (gainNode) gainNode.gain.value = parseFloat(this.value);
-}});
-
-function setAudioStatus(text, color) {{
-  document.getElementById('audioStatus').textContent = text;
-  document.getElementById('audioIndicator').style.background = color;
+// ══════════════════════════════════════════════
+//  ONGLETS
+// ══════════════════════════════════════════════
+function switchTab(name) {{
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.getElementById('pane-' + name).classList.add('active');
+  if (name === 'timer') {{ startTimerClock(); loadTimerStatus(); }}
+  if (name === 'mp3') loadMP3List();
 }}
 
-function toggleListen() {{
-  listening ? stopListen() : startListen();
-}}
-
-function startListen() {{
-  if (listening) return;
-  listening = true;
-  document.getElementById('btnListen').textContent = '⏹ Arrêter';
-  document.getElementById('btnListen').className = 'btn btn-danger';
-  setAudioStatus('Ouverture du micro…', '#f0a500');
-  // Demander au serveur d'ouvrir le micro avant de connecter le SSE
-  fetch(SERVER + '/mic_start', {{method:'POST'}}).catch(()=>{{}});
-
-  // Créer le contexte audio avec le bon sample rate
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate }});
-  gainNode = audioCtx.createGain();
-  gainNode.gain.value = parseFloat(document.getElementById('listenVolume').value);
-  gainNode.connect(audioCtx.destination);
-  nextTime = audioCtx.currentTime + AHEAD_SEC;
-
-  audioSSE = new EventSource(SERVER + '/audio_stream');
-
-  // Premier événement : config (sampleRate)
-  audioSSE.addEventListener('config', e => {{
-    const cfg = JSON.parse(e.data);
-    sampleRate = cfg.sampleRate;
-    // Recréer le contexte si le sample rate diffère
-    if (audioCtx.sampleRate !== sampleRate) {{
-      audioCtx.close();
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate }});
-      gainNode = audioCtx.createGain();
-      gainNode.gain.value = parseFloat(document.getElementById('listenVolume').value);
-      gainNode.connect(audioCtx.destination);
-      nextTime = audioCtx.currentTime + AHEAD_SEC;
-    }}
-    setAudioStatus('🔴 Micro en direct', '#3ecf8e');
-  }});
-
-  // Chaque trame PCM base64
-  audioSSE.onmessage = e => {{
-    if (!audioCtx || !gainNode) return;
-    try {{
-      // Décoder base64 → ArrayBuffer
-      const binStr = atob(e.data);
-      const bytes  = new Uint8Array(binStr.length);
-      for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
-
-      // PCM int16 little-endian → float32
-      const pcm16   = new Int16Array(bytes.buffer);
-      const float32 = new Float32Array(pcm16.length);
-      for (let i = 0; i < pcm16.length; i++) float32[i] = pcm16[i] / 32768.0;
-
-      // Créer un AudioBuffer et le planifier
-      const buf = audioCtx.createBuffer(1, float32.length, sampleRate);
-      buf.copyToChannel(float32, 0);
-      const src = audioCtx.createBufferSource();
-      src.buffer = buf;
-      src.connect(gainNode);
-
-      const now = audioCtx.currentTime;
-      if (nextTime < now + 0.01) nextTime = now + AHEAD_SEC; // rattrapage si retard
-      src.start(nextTime);
-      nextTime += buf.duration;
-    }} catch(err) {{
-      console.warn('[Audio] decode error:', err);
-    }}
-  }};
-
-  audioSSE.onerror = () => {{
-    if (listening) setAudioStatus('⚠ Reconnexion…', '#e35b5b');
-  }};
-}}
-
-function stopListen() {{
-  listening = false;
-  if (audioSSE)  {{ audioSSE.close();  audioSSE = null; }}
-  if (audioCtx)  {{ audioCtx.close();  audioCtx = null; gainNode = null; }}
-  nextTime = 0;
-  // Fermer le micro côté serveur
-  fetch(SERVER + '/mic_stop', {{method:'POST'}}).catch(()=>{{}});
-  document.getElementById('btnListen').textContent = '🎧 Écouter';
-  document.getElementById('btnListen').className = 'btn btn-primary';
-  setAudioStatus('Micro fermé', '#444');
-}}
-
-// ── Captures mouvement ──────────────────────
-let capturesEnabled = false;
-async function toggleCaptures() {{
-  capturesEnabled = !capturesEnabled;
-  try {{
-    await fetch(SERVER + '/set_captures', {{
-      method: 'POST',
-      headers: {{'Content-Type': 'application/json'}},
-      body: JSON.stringify({{enabled: capturesEnabled}})
-    }});
-    const tog   = document.getElementById('captureToggle');
-    const thumb = document.getElementById('captureThumb');
-    const label = document.getElementById('captureStatus');
-    if (capturesEnabled) {{
-      tog.style.background   = 'var(--accent2)';
-      thumb.style.left       = '18px';
-      thumb.style.background = '#fff';
-      label.textContent      = 'Activées';
-    }} else {{
-      tog.style.background   = '#333';
-      thumb.style.left       = '2px';
-      thumb.style.background = '#888';
-      label.textContent      = 'Désactivées';
-    }}
-    toast(capturesEnabled ? '✓ Captures activées' : 'Captures désactivées');
-  }} catch(e) {{ toast('Erreur', 'err'); }}
-}}
-
-// ── Qualité vidéo ────────────────────────────
-const QUALITY_LABELS = {{
-  hd:     'HD 960×540 · ~13 Mbit/s',
-  medium: 'Moyen 640×360 · ~4 Mbit/s',
-  low:    'Éco 480×270 · ~1 Mbit/s',
-}};
-
-async function setQuality(q) {{
-  try {{
-    const r = await fetch(SERVER + '/set_quality', {{
-      method: 'POST',
-      headers: {{'Content-Type': 'application/json'}},
-      body: JSON.stringify({{quality: q}})
-    }});
-    const d = await r.json();
-    if (d.status === 'ok') {{
-      ['hd','medium','low'].forEach(k => {{
-        document.getElementById('q-' + k).className =
-          'btn ' + (k === q ? 'btn-success' : 'btn-ghost');
-      }});
-      document.getElementById('qualityLabel').textContent = QUALITY_LABELS[q];
-      toast('✓ Qualité : ' + QUALITY_LABELS[q]);
-    }}
-  }} catch(e) {{ toast('Erreur qualité', 'err'); }}
-}}
-
-// Charger la qualité courante au démarrage
-(async () => {{
-  try {{
-    const r = await fetch(SERVER + '/get_quality');
-    const d = await r.json();
-    ['hd','medium','low'].forEach(k => {{
-      document.getElementById('q-' + k).className =
-        'btn ' + (k === d.quality ? 'btn-success' : 'btn-ghost');
-    }});
-    document.getElementById('qualityLabel').textContent = QUALITY_LABELS[d.quality] || d.label;
-  }} catch(e) {{}}
-}})();
-
-// ── Menu sections ───────────────────────────
-const SECTION_KEY = 'jvo_sections';
-let sectionState = JSON.parse(localStorage.getItem(SECTION_KEY) || '{{}}');
-
-function toggleMenu() {{
-  document.getElementById('menuOverlay').classList.toggle('open');
-}}
-function closeMenu() {{
-  document.getElementById('menuOverlay').classList.remove('open');
-}}
-function toggleSection(id) {{
-  const card = document.getElementById(id);
-  const tog  = document.getElementById('tog-' + id);
-  const visible = card.style.display === 'none';
-  card.style.display = visible ? '' : 'none';
-  tog.classList.toggle('on', visible);
-  sectionState[id] = visible;
-  localStorage.setItem(SECTION_KEY, JSON.stringify(sectionState));
-}}
-function applySectionState() {{
-  Object.entries(sectionState).forEach(([id, visible]) => {{
-    const card = document.getElementById(id);
-    const tog  = document.getElementById('tog-' + id);
-    if (!card || !tog) return;
-    card.style.display = visible ? '' : 'none';
-    tog.classList.toggle('on', visible);
-  }});
-}}
-applySectionState();
-
-// ── Flux vidéo ──────────────────────────────
-const feed = document.getElementById('videoFeed');
-feed.onerror = () => {{ feed.src = SERVER + '/video_feed?t=' + Date.now(); }};
-setInterval(() => {{
-  feed.src = SERVER + '/video_feed?t=' + Date.now();
-}}, 30000);
-
-// ── Toast ────────────────────────────────────
+// ══════════════════════════════════════════════
+//  TOAST
+// ══════════════════════════════════════════════
 function toast(msg, type='ok') {{
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -1334,14 +1443,76 @@ function toast(msg, type='ok') {{
   t._timer = setTimeout(() => t.className = '', 3000);
 }}
 
-// ── TTS ──────────────────────────────────────
+// ══════════════════════════════════════════════
+//  FLUX VIDÉO
+// ══════════════════════════════════════════════
+const feed = document.getElementById('videoFeed');
+feed.onerror = () => {{ feed.src = SERVER + '/video_feed?t=' + Date.now(); }};
+setInterval(() => {{ feed.src = SERVER + '/video_feed?t=' + Date.now(); }}, 30000);
+
+// ── PiP (Picture-in-Picture via window popup) ──
+let pipWin = null;
+
+function openPiPWindow() {{
+  const w = parseInt(document.getElementById('pipWidth').value);
+  const h = parseInt(document.getElementById('pipHeight').value);
+  const left = window.screen.width  - w - 20;
+  const top  = window.screen.height - h - 60;
+  pipWin = window.open('', 'jvo_pip',
+    `width=${{w}},height=${{h}},left=${{left}},top=${{top}},` +
+    `resizable=yes,scrollbars=no,status=no,menubar=no,toolbar=no`);
+  if (!pipWin) {{
+    toast('Autorisez les popups pour ce site puis réessayez.', 'err');
+    return;
+  }}
+  pipWin.document.write(`<!DOCTYPE html><html>
+<head><title>JVO – PiP</title>
+<style>*{{margin:0;padding:0;box-sizing:border-box}}
+body{{background:#000;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden}}
+img{{width:100%;height:100%;object-fit:contain}}</style></head>
+<body><img src="${{SERVER}}/video_feed" id="pipImg"></body></html>`);
+  pipWin.document.close();
+  pipWin.onbeforeunload = () => {{
+    pipWin = null;
+    document.getElementById('pipOpenBtn').style.display  = '';
+    document.getElementById('pipCloseBtn').style.display = 'none';
+    document.getElementById('pipBtn').textContent = '⧉ Mode PiP';
+  }};
+  document.getElementById('pipOpenBtn').style.display  = 'none';
+  document.getElementById('pipCloseBtn').style.display = '';
+  document.getElementById('pipBtn').textContent = '✕ Fermer PiP';
+  toast('✓ Fenêtre PiP ouverte');
+}}
+
+function closePiPWindow() {{
+  if (pipWin && !pipWin.closed) pipWin.close();
+  pipWin = null;
+  document.getElementById('pipOpenBtn').style.display  = '';
+  document.getElementById('pipCloseBtn').style.display = 'none';
+  document.getElementById('pipBtn').textContent = '⧉ Mode PiP';
+}}
+
+function togglePiP() {{
+  if (pipWin && !pipWin.closed) closePiPWindow();
+  else openPiPWindow();
+}}
+
+document.getElementById('pipWidth').addEventListener('input', function() {{
+  document.getElementById('pipWidthLabel').textContent = this.value + ' px';
+}});
+document.getElementById('pipHeight').addEventListener('input', function() {{
+  document.getElementById('pipHeightLabel').textContent = this.value + ' px';
+}});
+
+// ══════════════════════════════════════════════
+//  TTS
+// ══════════════════════════════════════════════
 async function sendTTS() {{
   const text = document.getElementById('ttsText').value.trim();
   if (!text) {{ toast('Aucun texte saisi', 'err'); return; }}
   try {{
     const r = await fetch(SERVER + '/tts', {{
-      method:'POST',
-      headers:{{'Content-Type':'application/json'}},
+      method:'POST', headers:{{'Content-Type':'application/json'}},
       body: JSON.stringify({{text}})
     }});
     const d = await r.json();
@@ -1349,13 +1520,10 @@ async function sendTTS() {{
     else toast('Erreur: ' + d.message, 'err');
   }} catch(e) {{ toast('Connexion impossible', 'err'); }}
 }}
-
-// Envoi avec Ctrl+Entrée
 document.getElementById('ttsText').addEventListener('keydown', e => {{
   if (e.ctrlKey && e.key === 'Enter') sendTTS();
 }});
 
-// ── Voix edge-tts ────────────────────────────
 async function loadVoices() {{
   try {{
     const r = await fetch(SERVER + '/voices');
@@ -1383,28 +1551,24 @@ async function setVoice(id) {{
   }} catch(e) {{ toast('Connexion impossible','err'); }}
 }}
 
-// ── Phrases rapides ──────────────────────────
+// ── Phrases rapides ──
 function buildQuickBtns(phrases) {{
   const wrap = document.getElementById('quickBtns');
   wrap.innerHTML = '';
   phrases.forEach(p => {{
     const row = document.createElement('div');
     row.className = 'quick-item';
-
     const btn = document.createElement('button');
     btn.className = 'quick-btn';
     btn.textContent = '🔊 ' + p.text; btn.title = p.text;
     btn.onclick = () => {{ document.getElementById('ttsText').value = p.text; sendTTS(); }};
-
     const del = document.createElement('button');
     del.className = 'quick-del'; del.title = 'Supprimer'; del.textContent = '✕';
     del.onclick = () => deletePhrase(p.id);
-
     row.appendChild(btn); row.appendChild(del);
     wrap.appendChild(row);
   }});
 }}
-
 async function loadPhrases() {{
   try {{
     const r = await fetch(SERVER + '/phrases');
@@ -1412,7 +1576,6 @@ async function loadPhrases() {{
     buildQuickBtns(d.phrases);
   }} catch(e) {{ console.error('loadPhrases', e); }}
 }}
-
 async function addPhrase() {{
   const inp  = document.getElementById('newPhrase');
   const text = inp.value.trim();
@@ -1423,25 +1586,188 @@ async function addPhrase() {{
       body: JSON.stringify({{text}})
     }});
     const d = await r.json();
-    if (d.status === 'ok') {{ inp.value = ''; buildQuickBtns(d.phrases); toast('Phrase ajoutee'); }}
+    if (d.status === 'ok') {{ inp.value = ''; buildQuickBtns(d.phrases); toast('Phrase ajoutée'); }}
     else toast('Erreur', 'err');
   }} catch(e) {{ toast('Connexion impossible','err'); }}
 }}
-
 async function deletePhrase(id) {{
   try {{
     const r = await fetch(SERVER + '/phrases/' + id, {{method:'DELETE'}});
     const d = await r.json();
-    if (d.status === 'ok') {{ buildQuickBtns(d.phrases); toast('Phrase supprimee'); }}
+    if (d.status === 'ok') {{ buildQuickBtns(d.phrases); toast('Phrase supprimée'); }}
   }} catch(e) {{ toast('Connexion impossible','err'); }}
 }}
 
+// ══════════════════════════════════════════════
+//  MP3 – LISTE AVEC DRAG & DROP + RENOMMER + SUPPRIMER
+// ══════════════════════════════════════════════
+let mp3Labels = {{}};
+let mp3Order  = [];
+let dragSrc   = null;
 
+async function loadMP3List() {{
+  try {{
+    const [rFiles, rLabels] = await Promise.all([
+      fetch(SERVER + '/list_mp3'),
+      fetch(SERVER + '/mp3_labels'),
+    ]);
+    const dFiles  = await rFiles.json();
+    const dLabels = await rLabels.json();
+    mp3Labels = dLabels.labels || {{}};
+    const files = dFiles.files || [];
+    mp3Order = files;
+    buildMP3List(files);
+  }} catch(e) {{ console.error(e); }}
+}}
 
-loadVoices();
-loadPhrases();
+function buildMP3List(files) {{
+  const ul = document.getElementById('mp3List');
+  ul.innerHTML = '';
+  if (!files.length) {{
+    ul.innerHTML = '<li style="color:var(--muted);font-size:.82rem">Aucun fichier audio</li>';
+    return;
+  }}
+  files.forEach((f, idx) => {{
+    const li = document.createElement('li');
+    li.className = 'mp3-item';
+    li.draggable  = true;
+    li.dataset.file = f;
 
-// ── Upload MP3 ────────────────────────────────
+    const alias = mp3Labels[f] || '';
+    li.innerHTML = `
+      <div class="mp3-row1">
+        <span class="mp3-handle" title="Glisser pour réordonner">☰</span>
+        <div style="flex:1;overflow:hidden">
+          <div class="mp3-label" title="${{f}}">${{alias || f}}</div>
+          ${{alias ? `<div class="mp3-alias">${{f}}</div>` : ''}}
+        </div>
+      </div>
+      <div class="mp3-row2">
+        <button class="btn btn-success" onclick="playMP3('${{f}}')" style="font-size:.75rem;padding:4px 10px">▶ Jouer</button>
+        <button class="btn btn-ghost"   onclick="openRenameModal('${{f}}')" style="font-size:.75rem;padding:4px 9px">✎ Renommer</button>
+        <button class="btn btn-danger"  onclick="deleteMP3('${{f}}')" style="font-size:.75rem;padding:4px 9px">🗑</button>
+      </div>`;
+
+    // Drag & drop
+    li.addEventListener('dragstart', e => {{
+      dragSrc = li;
+      li.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    }});
+    li.addEventListener('dragend',  () => {{ li.classList.remove('dragging'); }});
+    li.addEventListener('dragover', e => {{
+      e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+      ul.querySelectorAll('.mp3-item').forEach(i => i.classList.remove('drag-over'));
+      li.classList.add('drag-over');
+    }});
+    li.addEventListener('dragleave', () => li.classList.remove('drag-over'));
+    li.addEventListener('drop', e => {{
+      e.preventDefault();
+      li.classList.remove('drag-over');
+      if (dragSrc && dragSrc !== li) {{
+        const items = [...ul.querySelectorAll('.mp3-item')];
+        const srcIdx  = items.indexOf(dragSrc);
+        const destIdx = items.indexOf(li);
+        if (srcIdx < destIdx) ul.insertBefore(dragSrc, li.nextSibling);
+        else                   ul.insertBefore(dragSrc, li);
+        saveMP3Order();
+      }}
+    }});
+
+    ul.appendChild(li);
+  }});
+}}
+
+async function saveMP3Order() {{
+  const order = [...document.querySelectorAll('#mp3List .mp3-item')].map(li => li.dataset.file);
+  try {{
+    await fetch(SERVER + '/mp3_order', {{
+      method:'POST', headers:{{'Content-Type':'application/json'}},
+      body: JSON.stringify({{order}})
+    }});
+    toast('✓ Ordre sauvegardé');
+  }} catch(e) {{ toast('Erreur sauvegarde ordre', 'err'); }}
+}}
+
+async function playMP3(filename) {{
+  try {{
+    const r = await fetch(SERVER + '/play_mp3', {{
+      method:'POST', headers:{{'Content-Type':'application/json'}},
+      body: JSON.stringify({{filename}})
+    }});
+    const d = await r.json();
+    if (d.status === 'ok') toast('▶ ' + (mp3Labels[filename] || filename));
+    else toast('Erreur: ' + d.message, 'err');
+  }} catch(e) {{ toast('Connexion impossible', 'err'); }}
+}}
+
+async function stopAudio() {{
+  try {{
+    await fetch(SERVER + '/stop_audio', {{method:'POST'}});
+    toast('■ Audio arrêté');
+  }} catch(e) {{ toast('Connexion impossible', 'err'); }}
+}}
+
+async function deleteMP3(filename) {{
+  if (!confirm('Supprimer « ' + (mp3Labels[filename] || filename) + ' » ?')) return;
+  try {{
+    const r = await fetch(SERVER + '/delete_mp3', {{
+      method:'POST', headers:{{'Content-Type':'application/json'}},
+      body: JSON.stringify({{filename}})
+    }});
+    const d = await r.json();
+    if (d.status === 'ok') {{ toast('🗑 Supprimé : ' + filename); loadMP3List(); }}
+    else toast('Erreur : ' + d.message, 'err');
+  }} catch(e) {{ toast('Connexion impossible', 'err'); }}
+}}
+
+// ── Modal Renommer ──
+let _renameTarget = '';
+function openRenameModal(filename) {{
+  _renameTarget = filename;
+  document.getElementById('renameOld').value   = filename;
+  document.getElementById('renameNew').value   = filename;
+  document.getElementById('renameAlias').value = mp3Labels[filename] || '';
+  document.getElementById('renameModal').classList.add('open');
+  setTimeout(() => document.getElementById('renameAlias').focus(), 50);
+}}
+function closeRenameModal() {{
+  document.getElementById('renameModal').classList.remove('open');
+}}
+async function confirmRename() {{
+  const oldName  = _renameTarget;
+  const newName  = document.getElementById('renameNew').value.trim();
+  const alias    = document.getElementById('renameAlias').value.trim();
+  let changed = false;
+
+  // Renommer le fichier si le nom a changé
+  if (newName && newName !== oldName) {{
+    try {{
+      const r = await fetch(SERVER + '/rename_mp3', {{
+        method:'POST', headers:{{'Content-Type':'application/json'}},
+        body: JSON.stringify({{old_name: oldName, new_name: newName}})
+      }});
+      const d = await r.json();
+      if (d.status !== 'ok') {{ toast('Erreur renommage : ' + d.message, 'err'); return; }}
+      changed = true;
+    }} catch(e) {{ toast('Connexion impossible', 'err'); return; }}
+  }}
+
+  // Enregistrer le libellé (sur le nouveau nom si renommé)
+  const targetName = changed ? newName : oldName;
+  try {{
+    await fetch(SERVER + '/mp3_labels', {{
+      method:'POST', headers:{{'Content-Type':'application/json'}},
+      body: JSON.stringify({{filename: targetName, label: alias}})
+    }});
+  }} catch(e) {{}}
+
+  closeRenameModal();
+  toast('✓ Modifié');
+  loadMP3List();
+}}
+
+// ── Upload ──
 async function uploadMP3(file) {{
   if (!file) return;
   const fd = new FormData();
@@ -1454,10 +1780,8 @@ async function uploadMP3(file) {{
     else toast('Erreur upload: ' + d.message, 'err');
   }} catch(e) {{ toast('Connexion impossible', 'err'); }}
 }}
-
-// ── Drag & drop ───────────────────────────────
 const dz = document.getElementById('dropZone');
-dz.addEventListener('dragover', e => {{ e.preventDefault(); dz.style.borderColor='var(--accent)'; }});
+dz.addEventListener('dragover',  e => {{ e.preventDefault(); dz.style.borderColor='var(--accent)'; }});
 dz.addEventListener('dragleave', () => {{ dz.style.borderColor=''; }});
 dz.addEventListener('drop', e => {{
   e.preventDefault(); dz.style.borderColor='';
@@ -1465,52 +1789,263 @@ dz.addEventListener('drop', e => {{
   if (f) uploadMP3(f);
 }});
 
-// ── Liste MP3 ─────────────────────────────────
-async function loadMP3List() {{
+// ══════════════════════════════════════════════
+//  TIMER VGT
+// ══════════════════════════════════════════════
+let _timerClockInterval = null;
+
+function startTimerClock() {{
+  if (_timerClockInterval) return;
+  _timerClockInterval = setInterval(() => {{
+    const now = new Date();
+    document.getElementById('timerClock').textContent =
+      now.toLocaleTimeString('fr-FR', {{hour:'2-digit',minute:'2-digit',second:'2-digit'}});
+  }}, 500);
+}}
+
+async function loadTimerStatus() {{
   try {{
-    const r = await fetch(SERVER + '/list_mp3');
+    const r = await fetch(SERVER + '/timer/status');
     const d = await r.json();
-    const ul = document.getElementById('mp3List');
-    ul.innerHTML = '';
-    if (!d.files || d.files.length === 0) {{
-      ul.innerHTML = '<li style="color:var(--muted);font-size:.82rem">Aucun fichier audio disponible</li>';
-      return;
+    applyTimerState(d.enabled);
+    buildTimerTable(d.schedule || []);
+    buildTimerLog(d.log || []);
+  }} catch(e) {{ console.error('timer status', e); }}
+}}
+
+function applyTimerState(enabled) {{
+  const pill  = document.getElementById('timerPill');
+  const badge = document.getElementById('timerBadge');
+  pill.classList.toggle('on', enabled);
+  badge.textContent = enabled ? 'ON' : 'OFF';
+  badge.className   = 'timer-badge ' + (enabled ? 'on' : 'off');
+}}
+
+async function timerToggle() {{
+  try {{
+    const r = await fetch(SERVER + '/timer/toggle', {{method:'POST'}});
+    const d = await r.json();
+    applyTimerState(d.enabled);
+    toast(d.enabled ? '⏱ Timer activé' : '⏱ Timer désactivé');
+  }} catch(e) {{ toast('Erreur', 'err'); }}
+}}
+
+function buildTimerTable(schedule) {{
+  const tbody = document.getElementById('timerBody');
+  tbody.innerHTML = '';
+  schedule.forEach((row, i) => {{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="text" value="${{row.time}}" placeholder="HH:MM"
+                 style="width:68px" data-i="${{i}}" data-field="time"></td>
+      <td><input type="text" value="${{row.file}}" placeholder="fichier.mp3"
+                 style="width:120px" data-i="${{i}}" data-field="file"></td>
+      <td><button class="timer-del" onclick="timerDelRow(${{i}})">✕</button></td>`;
+    tbody.appendChild(tr);
+  }});
+}}
+
+function buildTimerLog(logs) {{
+  const el = document.getElementById('timerLog');
+  if (!logs.length) {{
+    el.innerHTML = '<span style="color:var(--muted)">Aucun rappel aujourd\'hui.</span>';
+    return;
+  }}
+  el.innerHTML = logs.slice().reverse()
+    .map(l => `<div><span style="color:var(--accent2)">${{l.ts}}</span> → ${{l.file}}</div>`)
+    .join('');
+}}
+
+function timerGetSchedule() {{
+  const rows = document.querySelectorAll('#timerBody tr');
+  return [...rows].map(tr => {{
+    const inputs = tr.querySelectorAll('input');
+    return {{ time: inputs[0].value.trim(), file: inputs[1].value.trim() }};
+  }}).filter(r => r.time && r.file);
+}}
+
+async function timerSave() {{
+  const schedule = timerGetSchedule();
+  try {{
+    const r = await fetch(SERVER + '/timer/schedule', {{
+      method:'POST', headers:{{'Content-Type':'application/json'}},
+      body: JSON.stringify({{schedule}})
+    }});
+    const d = await r.json();
+    if (d.status === 'ok') toast('✓ Planning sauvegardé');
+    else toast('Erreur', 'err');
+  }} catch(e) {{ toast('Connexion impossible', 'err'); }}
+}}
+
+async function timerReset() {{
+  if (!confirm('Réinitialiser le planning par défaut ?')) return;
+  try {{
+    const r = await fetch(SERVER + '/timer/reset', {{method:'POST'}});
+    const d = await r.json();
+    buildTimerTable(d.schedule || []);
+    toast('↺ Planning réinitialisé');
+  }} catch(e) {{ toast('Erreur', 'err'); }}
+}}
+
+function timerAddRow() {{
+  const schedule = timerGetSchedule();
+  schedule.push({{time: '', file: ''}});
+  buildTimerTable(schedule);
+  // Focus sur la nouvelle ligne
+  const inputs = document.querySelectorAll('#timerBody tr:last-child input');
+  if (inputs[0]) inputs[0].focus();
+}}
+
+function timerDelRow(i) {{
+  const schedule = timerGetSchedule();
+  schedule.splice(i, 1);
+  buildTimerTable(schedule);
+}}
+
+async function timerFiredReset() {{
+  try {{
+    await fetch(SERVER + '/timer/fired_reset', {{method:'POST'}});
+    toast('↺ Sonneries réarmées pour cette session');
+  }} catch(e) {{ toast('Erreur', 'err'); }}
+}}
+
+// Rafraîchir le log toutes les 30s si onglet timer actif
+setInterval(() => {{
+  if (document.getElementById('pane-timer').classList.contains('active')) {{
+    fetch(SERVER + '/timer/status').then(r=>r.json()).then(d => buildTimerLog(d.log||[])).catch(()=>{{}});
+  }}
+}}, 30000);
+
+// ══════════════════════════════════════════════
+//  CAMÉRA : qualité + captures
+// ══════════════════════════════════════════════
+const QUALITY_LABELS = {{
+  hd:     'HD 960×540 · ~13 Mbit/s',
+  medium: 'Moyen 640×360 · ~4 Mbit/s',
+  low:    'Éco 480×270 · ~1 Mbit/s',
+}};
+async function setQuality(q) {{
+  try {{
+    const r = await fetch(SERVER + '/set_quality', {{
+      method:'POST', headers:{{'Content-Type':'application/json'}},
+      body: JSON.stringify({{quality: q}})
+    }});
+    const d = await r.json();
+    if (d.status === 'ok') {{
+      ['hd','medium','low'].forEach(k =>
+        document.getElementById('q-' + k).className = 'btn ' + (k===q ? 'btn-success' : 'btn-ghost'));
+      document.getElementById('qualityLabel').textContent = QUALITY_LABELS[q];
+      toast('✓ Qualité : ' + QUALITY_LABELS[q]);
     }}
-    d.files.forEach(f => {{
-      const li = document.createElement('li');
-      li.innerHTML = `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px" title="${{f}}">${{f}}</span>
-        <button class="btn btn-success" onclick="playMP3('${{f}}')">▶ Jouer</button>`;
-      ul.appendChild(li);
-    }});
-  }} catch(e) {{ console.error(e); }}
+  }} catch(e) {{ toast('Erreur qualité', 'err'); }}
 }}
-
-async function playMP3(filename) {{
+(async () => {{
   try {{
-    const r = await fetch(SERVER + '/play_mp3', {{
-      method:'POST',
-      headers:{{'Content-Type':'application/json'}},
-      body: JSON.stringify({{filename}})
-    }});
+    const r = await fetch(SERVER + '/get_quality');
     const d = await r.json();
-    if (d.status === 'ok') toast('▶ Lecture: ' + filename);
-    else toast('Erreur: ' + d.message, 'err');
-  }} catch(e) {{ toast('Connexion impossible', 'err'); }}
-}}
+    ['hd','medium','low'].forEach(k =>
+      document.getElementById('q-' + k).className = 'btn ' + (k===d.quality ? 'btn-success' : 'btn-ghost'));
+    document.getElementById('qualityLabel').textContent = QUALITY_LABELS[d.quality] || d.label;
+  }} catch(e) {{}}
+}})();
 
-async function stopAudio() {{
+let capturesEnabled = false;
+async function toggleCaptures() {{
+  capturesEnabled = !capturesEnabled;
   try {{
-    await fetch(SERVER + '/stop_audio', {{method:'POST'}});
-    toast('■ Audio arrêté');
-  }} catch(e) {{ toast('Connexion impossible', 'err'); }}
+    await fetch(SERVER + '/set_captures', {{
+      method:'POST', headers:{{'Content-Type':'application/json'}},
+      body: JSON.stringify({{enabled: capturesEnabled}})
+    }});
+    const tog   = document.getElementById('captureToggle');
+    const label = document.getElementById('captureStatus');
+    tog.classList.toggle('on', capturesEnabled);
+    label.textContent = capturesEnabled ? 'Activées' : 'Désactivées';
+    toast(capturesEnabled ? '✓ Captures activées' : 'Captures désactivées');
+  }} catch(e) {{ toast('Erreur', 'err'); }}
 }}
 
-// Chargement initial
+// ══════════════════════════════════════════════
+//  ÉCOUTE MICRO EN DIRECT
+// ══════════════════════════════════════════════
+let audioCtx = null, gainNode = null, audioSSE = null, listening = false;
+let sampleRate = 44100, nextTime = 0;
+const AHEAD_SEC = 0.10;
+
+document.getElementById('listenVolume').addEventListener('input', function() {{
+  document.getElementById('volLabel').textContent = Math.round(this.value*100) + '%';
+  if (gainNode) gainNode.gain.value = parseFloat(this.value);
+}});
+function setAudioStatus(text, color) {{
+  document.getElementById('audioStatus').textContent = text;
+  document.getElementById('audioIndicator').style.background = color;
+}}
+function toggleListen() {{ listening ? stopListen() : startListen(); }}
+function startListen() {{
+  if (listening) return;
+  listening = true;
+  document.getElementById('btnListen').textContent = '⏹ Arrêter';
+  document.getElementById('btnListen').className   = 'btn btn-danger';
+  setAudioStatus('Ouverture du micro…', '#f0a500');
+  fetch(SERVER + '/mic_start', {{method:'POST'}}).catch(()=>{{}});
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate }});
+  gainNode = audioCtx.createGain();
+  gainNode.gain.value = parseFloat(document.getElementById('listenVolume').value);
+  gainNode.connect(audioCtx.destination);
+  nextTime = audioCtx.currentTime + AHEAD_SEC;
+  audioSSE = new EventSource(SERVER + '/audio_stream');
+  audioSSE.addEventListener('config', e => {{
+    const cfg = JSON.parse(e.data); sampleRate = cfg.sampleRate;
+    if (audioCtx.sampleRate !== sampleRate) {{
+      audioCtx.close();
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate }});
+      gainNode = audioCtx.createGain();
+      gainNode.gain.value = parseFloat(document.getElementById('listenVolume').value);
+      gainNode.connect(audioCtx.destination);
+      nextTime = audioCtx.currentTime + AHEAD_SEC;
+    }}
+    setAudioStatus('🔴 Micro en direct', '#3ecf8e');
+  }});
+  audioSSE.onmessage = e => {{
+    if (!audioCtx || !gainNode) return;
+    try {{
+      const binStr = atob(e.data);
+      const bytes  = new Uint8Array(binStr.length);
+      for (let i=0; i<binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+      const pcm16   = new Int16Array(bytes.buffer);
+      const float32 = new Float32Array(pcm16.length);
+      for (let i=0; i<pcm16.length; i++) float32[i] = pcm16[i] / 32768.0;
+      const buf = audioCtx.createBuffer(1, float32.length, sampleRate);
+      buf.copyToChannel(float32, 0);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf; src.connect(gainNode);
+      const now = audioCtx.currentTime;
+      if (nextTime < now + 0.01) nextTime = now + AHEAD_SEC;
+      src.start(nextTime); nextTime += buf.duration;
+    }} catch(err) {{ console.warn('[Audio]', err); }}
+  }};
+  audioSSE.onerror = () => {{ if (listening) setAudioStatus('⚠ Reconnexion…', '#e35b5b'); }};
+}}
+function stopListen() {{
+  listening = false;
+  if (audioSSE)  {{ audioSSE.close();  audioSSE = null; }}
+  if (audioCtx)  {{ audioCtx.close();  audioCtx = null; gainNode = null; }}
+  nextTime = 0;
+  fetch(SERVER + '/mic_stop', {{method:'POST'}}).catch(()=>{{}});
+  document.getElementById('btnListen').textContent = '🎧 Écouter';
+  document.getElementById('btnListen').className   = 'btn btn-primary';
+  setAudioStatus('Micro fermé', '#444');
+}}
+
+// ══════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════
+loadVoices();
+loadPhrases();
 loadMP3List();
 </script>
 </body>
 </html>'''
-
 
 # ─────────────────────────────────────────────
 #  MAIN
