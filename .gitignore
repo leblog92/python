@@ -5,10 +5,5 @@ ear/meteo/.env.example
 ear/meteo/.env
 ear/meteo/.env.local
 ear/meteo/*.env
-
-ear/__pycache__/ear_gui.cpython-313.pyc
 flux/jvo_debug.log
 flux/cam.html
-flux/phrases.json
-flux/phrases.json
-flux/phrases.json
