@@ -9,8 +9,8 @@
 # ══════════════════════════════════════════════════════════════════
 
 # ── Salutations ───────────────────────────────────────────────────
-bonjour                     = sounds/turret.mp3
-tu as entendu               = sounds/bonjour.mp3
+bonjour                     = sounds/bonjour.mp3
+tu as entendu               = sounds/bonjour2.mp3
 hello                       = sounds/hello.mp3
 coucou                      = sounds/coucou.mp3
 au revoir                   = sounds/au_revoir.mp3
