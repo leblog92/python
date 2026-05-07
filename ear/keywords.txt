@@ -67,7 +67,7 @@ virus                       = sounds/virus.mp3
 vous ne passerez pas        = sounds/vous_ne_passerez_pas.mp3
 
 # ── Expressions du quotidien ──────────────────────────────────────
-merci beaucoup              = sounds/merci.mp3
+merci                       = sounds/merci.mp3
 j'ai faim                   = sounds/faim.mp3
 faim                        = sounds/faim.mp3
 super génial                = sounds/super.mp3
@@ -82,7 +82,7 @@ pleurer                     = sounds/pleurer.mp3
 pleurnicher                 = sounds/pleurer.mp3
 vomir                       = sounds/vomir.mp3
 romantique                  = sounds/romantique.mp3
-rire                        = sounds/nelson.mp3
+nelson                      = sounds/nelson.mp3
 pas votre carte             = sounds/nelson.mp3
 trop chaud                  = sounds/chaud.mp3
 réunion                     = sounds/nono.mp3
@@ -243,6 +243,7 @@ rembobine                   = sounds/rewind.mp3
 rembobiner                  = sounds/rewind.mp3
 rembobines                  = sounds/rewind.mp3
 réserver                    = sounds/resa.mp3
+retour                      = sounds/retour.mp3
 spotify                     = sounds/staying.mp3
 
 # ── Divers / fun ─────────────────────────────────────────────────
