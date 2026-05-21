@@ -220,11 +220,8 @@ def speak_text(text: str):
 #  AUDIO / MP3 (pygame mixer)
 # ─────────────────────────────────────────────
 pygame.mixer.init()
-MP3_DIR   = os.path.join(os.environ.get('USERPROFILE', os.path.expanduser('~')), 'Music', 'jvo_sounds')
+MP3_DIR = os.path.join(os.environ.get('USERPROFILE', os.path.expanduser('~')), 'Music', 'jvo_sounds')
 os.makedirs(MP3_DIR, exist_ok=True)
-
-TIMER_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mp3_timer')
-os.makedirs(TIMER_DIR, exist_ok=True)
 
 audio_lock = threading.Lock()
 
@@ -853,7 +850,7 @@ def _timer_loop():
                     t = entry.get('time', '')
                     f = entry.get('file', '')
                     if t == hm and t not in _timer_fired:
-                        path = os.path.join(TIMER_DIR, os.path.basename(f))
+                        path = os.path.join(MP3_DIR, os.path.basename(f))
                         if os.path.exists(path):
                             log.info(f"[TIMER] {t} -> {f}")
                             play_mp3_file(path)
