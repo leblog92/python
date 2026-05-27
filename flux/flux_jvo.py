@@ -7,7 +7,8 @@ from pathlib import Path
 import time
 import socket
 import getpass
-from flask import Response, request, jsonify, stream_with_context
+from flask import Response, request, jsonify, stream_with_context, session, redirect, url_for
+from functools import wraps
 import webbrowser
 import threading
 import pyttsx3
@@ -20,6 +21,14 @@ import struct
 import logging
 import traceback
 import sys
+import secrets
+
+# ── Variables d'environnement (.env local, jamais committé) ──────────────────
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
+except ImportError:
+    pass  # python-dotenv optionnel — fonctionne sans si variables déjà dans l'env
 
 # ─────────────────────────────────────────────
 #  SYSTÈME DE LOGS
@@ -46,6 +55,35 @@ def _handle_uncaught(exc_type, exc_value, exc_tb):
 sys.excepthook = _handle_uncaught
 
 app = flask.Flask(__name__)
+ngrok_public_url = None   # rempli au démarrage si NGROK_TOKEN présent
+
+# Clé de session Flask (générée aléatoirement au démarrage si absente du .env)
+app.secret_key = os.environ.get('FLASK_SECRET_KEY') or secrets.token_hex(32)
+
+# Mot de passe de l'interface (lu depuis .env — NE PAS mettre en dur ici)
+APP_PASSWORD = os.environ.get('JVO_PASSWORD', '')
+
+def login_required(f):
+    """Décorateur : redirige vers /login si non authentifié."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not APP_PASSWORD:
+            return f(*args, **kwargs)   # pas de mot de passe défini → accès libre (LAN only)
+        if not session.get('authenticated'):
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
+
+def api_auth(f):
+    """Décorateur pour les routes API (JSON) : retourne 401 si non authentifié."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not APP_PASSWORD:
+            return f(*args, **kwargs)
+        if not session.get('authenticated'):
+            return jsonify({"status": "error", "message": "Non authentifié"}), 401
+        return f(*args, **kwargs)
+    return decorated
 
 # ─────────────────────────────────────────────
 #  DIFFUSION AUDIO EN TEMPS RÉEL (SSE)
@@ -520,6 +558,7 @@ def generate_frames():
 # ─────────────────────────────────────────────
 
 @app.route('/video_feed')
+@api_auth
 def video_feed():
     client_ip = request.remote_addr
     log.info(f"[HTTP] GET /video_feed — client={client_ip}")
@@ -570,6 +609,7 @@ def _save_phrases(phrases):
         log.error(f"[PHRASES] Sauvegarde echouee : {e}")
 
 @app.route('/tts', methods=['POST'])
+@api_auth
 def tts():
     data = request.get_json(silent=True) or {}
     text = data.get('text', '').strip()
@@ -584,6 +624,7 @@ def voices():
     return jsonify({"voices": EDGE_VOICES, "current": EDGE_TTS_VOICE})
 
 @app.route('/set_voice', methods=['POST'])
+@api_auth
 def set_voice():
     global EDGE_TTS_VOICE
     data = request.get_json(silent=True) or {}
@@ -621,6 +662,7 @@ def delete_phrase(pid):
 
 # ── MP3 : upload ─────────────────────────────
 @app.route('/upload_mp3', methods=['POST'])
+@api_auth
 def upload_mp3():
     """
     Reçoit un fichier audio (MP3/WAV) et le sauvegarde dans MP3_DIR.
@@ -657,6 +699,7 @@ def list_mp3():
 
 # ── MP3 : lecture ─────────────────────────────
 @app.route('/play_mp3', methods=['POST'])
+@api_auth
 def play_mp3():
     """
     POST JSON : {"filename": "alerte.mp3"}
@@ -676,6 +719,7 @@ def play_mp3():
 
 # ── MP3 : stop ────────────────────────────────
 @app.route('/stop_audio', methods=['POST'])
+@api_auth
 def stop_audio():
     """Arrête la lecture audio en cours."""
     try:
@@ -689,6 +733,7 @@ def stop_audio():
 
 # ── MP3 : supprimer ──────────────────────────
 @app.route('/delete_mp3', methods=['POST'])
+@api_auth
 def delete_mp3():
     data = request.get_json(silent=True) or {}
     filename = data.get('filename', '').strip()
@@ -713,6 +758,7 @@ def delete_mp3():
 
 # ── MP3 : renommer ────────────────────────────
 @app.route('/rename_mp3', methods=['POST'])
+@api_auth
 def rename_mp3():
     data = request.get_json(silent=True) or {}
     old_name = data.get('old_name', '').strip()
@@ -927,6 +973,7 @@ def get_captures():
 
 # ── Qualité vidéo ────────────────────────────
 @app.route('/set_quality', methods=['POST'])
+@api_auth
 def set_quality():
     global stream_quality
     data = request.get_json(silent=True) or {}
@@ -944,14 +991,21 @@ def get_quality():
 
 # ── Contrôle micro (start/stop à la demande) ─
 @app.route('/mic_start', methods=['POST'])
+@api_auth
 def route_mic_start():
     ok = mic_start()
     return jsonify({"status": "ok" if ok else "error", "active": mic_active})
 
 @app.route('/mic_stop', methods=['POST'])
+@api_auth
 def route_mic_stop():
     mic_stop()
     return jsonify({"status": "ok", "active": False})
+
+@app.route('/ngrok_url')
+def get_ngrok_url():
+    return jsonify({"url": ngrok_public_url})
+
 
 @app.route('/mic_status')
 def route_mic_status():
@@ -960,6 +1014,7 @@ def route_mic_status():
 
 # ── Flux audio SSE ────────────────────────────
 @app.route('/audio_stream')
+@api_auth
 def audio_stream():
     """
     Server-Sent Events : envoie les trames PCM base64 aux clients web.
@@ -999,7 +1054,54 @@ def audio_stream():
     )
 
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = ''
+    if request.method == 'POST':
+        pwd = request.form.get('password', '')
+        if pwd == APP_PASSWORD:
+            session['authenticated'] = True
+            session.permanent = False
+            return redirect(url_for('index'))
+        error = 'Mot de passe incorrect'
+    # Page de login minimaliste, thème sombre cohérent
+    return f'''<!DOCTYPE html><html lang="fr"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JVO — Connexion</title>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{background:#0f0f17;display:flex;align-items:center;justify-content:center;
+       min-height:100vh;font-family:system-ui,sans-serif}}
+  .box{{background:#1a1a2e;border:1px solid #2a2a3e;border-radius:14px;
+        padding:40px 36px;width:320px;display:flex;flex-direction:column;gap:16px}}
+  h1{{color:#e0e0f0;font-size:1.1rem;text-align:center;letter-spacing:.05em}}
+  .dot{{width:10px;height:10px;border-radius:50%;background:#e35b5b;
+        box-shadow:0 0 8px #e35b5b;margin:0 auto 4px}}
+  input[type=password]{{background:#111;border:1px solid #2a2a3e;border-radius:8px;
+    color:#e0e0f0;padding:11px 13px;font-size:.95rem;width:100%;outline:none;
+    transition:border .2s}}
+  input[type=password]:focus{{border-color:#4f8ef7}}
+  button{{background:#4f8ef7;border:none;border-radius:8px;color:#fff;
+          padding:11px;font-size:.95rem;cursor:pointer;transition:background .2s}}
+  button:hover{{background:#3a7ae0}}
+  .err{{color:#e35b5b;font-size:.82rem;text-align:center}}
+</style></head><body>
+<form class="box" method="POST">
+  <div class="dot"></div>
+  <h1>SALLE JVO</h1>
+  <input type="password" name="password" placeholder="Mot de passe" autofocus>
+  {"<div class='err'>" + error + "</div>" if error else ""}
+  <button type="submit">Connexion</button>
+</form></body></html>'''
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+
 @app.route('/')
+@login_required
 def index():
     ip = get_local_ip()
     return f'''<!DOCTYPE html>
@@ -1166,6 +1268,15 @@ input[type=file]{{display:none}}
   <div class="dot"></div>
   <h1>SALLE JVO &ndash; Surveillance &amp; Diffusion</h1>
 </header>
+<div id="ngrokBar">
+  <div class="ngrok-dot"></div>
+  <span>Accès externe actif :</span>
+  <a id="ngrokLink" href="#" target="_blank"></a>
+  <button onclick="copyNgrok()" style="background:none;border:1px solid #2a4a2a;
+          color:#7ecf8e;border-radius:4px;padding:1px 7px;font-size:.7rem;cursor:pointer">
+    Copier
+  </button>
+</div>
 <div class="layout">
   <div class="video-panel">
     <img id="videoFeed" src="/video_feed" alt="Flux vid&eacute;o">
@@ -1343,6 +1454,28 @@ function switchTab(name) {{
   document.getElementById('tab-' + name).classList.add('active');
   document.getElementById('pane-' + name).classList.add('active');
   if (name === 'mp3')   loadMP3List();
+
+// ── ngrok URL ─────────────────────────────────
+(async function checkNgrok() {{
+  try {{
+    const r = await fetch(SERVER + '/ngrok_url');
+    const d = await r.json();
+    if (d.url) {{
+      document.getElementById('ngrokBar').style.display = 'flex';
+      document.getElementById('ngrokLink').href = d.url;
+      document.getElementById('ngrokLink').textContent = d.url;
+    }} else {{
+      // Réessayer toutes les 3 s pendant 30 s (ngrok peut mettre du temps)
+      if ((checkNgrok._tries = (checkNgrok._tries||0) + 1) < 10)
+        setTimeout(checkNgrok, 3000);
+    }}
+  }} catch(e) {{}}
+}})();
+
+function copyNgrok() {{
+  var url = document.getElementById('ngrokLink').textContent;
+  navigator.clipboard.writeText(url).then(function() {{ toast('URL copiée !'); }});
+}}
   if (name === 'timer') {{ startTimerClock(); loadTimerStatus(); }}
 }}
 
@@ -1912,6 +2045,65 @@ loadMP3List();
 # ─────────────────────────────────────────────
 #  MAIN
 # ─────────────────────────────────────────────
+# ─────────────────────────────────────────────
+#  NGROK — tunnel public optionnel
+# ─────────────────────────────────────────────
+def start_ngrok(port: int = 5000):
+    """
+    Lance ngrok en subprocess et retourne l'URL publique.
+    Nécessite ngrok.exe dans le même dossier que ce script
+    ET NGROK_TOKEN défini dans .env
+    """
+    global ngrok_public_url
+    token = os.environ.get('NGROK_TOKEN', '').strip()
+    if not token:
+        log.info("[NGROK] NGROK_TOKEN absent — tunnel désactivé")
+        return None
+
+    ngrok_exe = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ngrok.exe')
+    if not os.path.isfile(ngrok_exe):
+        log.warning(f"[NGROK] ngrok.exe introuvable dans {os.path.dirname(ngrok_exe)}")
+        return None
+
+    try:
+        # Configurer le token (une seule fois suffit, mais sans nuire si répété)
+        import subprocess
+        subprocess.run([ngrok_exe, 'config', 'add-authtoken', token],
+                       capture_output=True, timeout=10)
+
+        # Lancer le tunnel en arrière-plan
+        proc = subprocess.Popen(
+            [ngrok_exe, 'http', str(port), '--log', 'stdout', '--log-format', 'json'],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        )
+
+        # Lire les logs JSON jusqu'à obtenir l'URL publique (timeout 10 s)
+        import select
+        deadline = time.time() + 10
+        url = None
+        while time.time() < deadline and url is None:
+            try:
+                line = proc.stdout.readline()
+                if not line:
+                    break
+                data = json.loads(line.decode('utf-8', errors='ignore'))
+                if data.get('msg') == 'started tunnel':
+                    url = data.get('url') or data.get('public_url')
+            except (json.JSONDecodeError, Exception):
+                pass
+
+        if url:
+            ngrok_public_url = url
+            log.info(f"[NGROK] ✓ Tunnel actif : {url}")
+            return url
+        else:
+            log.warning("[NGROK] Tunnel démarré mais URL non récupérée dans les délais")
+            return None
+    except Exception as e:
+        log.error(f"[NGROK] Erreur démarrage : {e}")
+        return None
+
+
 if __name__ == '__main__':
     log.info("=== LOGITECH C920 - SURVEILLANCE HD ===")
     log.info(f"Fichier de log : {LOG_FILE}")
@@ -1919,15 +2111,13 @@ if __name__ == '__main__':
     log.info("[MICRO] Micro en veille — s'active à la demande via le bouton Écouter")
     save_html_file()
     ip_address = get_local_ip()
-    print(f"\n  Interface de contrôle : http://{ip_address}:5000")
-    print(f"  Flux vidéo seul       : http://{ip_address}:5000/video_feed")
-    print(f"  Dossier captures      : {motion_captures_dir}")
-    print(f"  Dossier MP3           : {MP3_DIR}")
-    print("\n  Endpoints disponibles :")
-    print("    POST /tts           → {{\"text\": \"...\"}}        – Lecture TTS")
-    print("    POST /upload_mp3    → form-data 'file'         – Upload audio")
-    print("    GET  /list_mp3                                 – Liste des fichiers")
-    print("    POST /play_mp3      → {{\"filename\": \"...\"}}     – Jouer un fichier")
-    print("    POST /stop_audio                               – Arrêter la lecture")
+    # Démarrer ngrok si token présent (avant Flask pour avoir l'URL dès le départ)
+    public_url = start_ngrok(port=5000)
+    print(f"\n  Interface LAN    : http://{ip_address}:5000")
+    if public_url:
+        print(f"  Accès externe    : {public_url}  ← partager cette URL")
+    print(f"  Flux vidéo       : http://{ip_address}:5000/video_feed")
+    print(f"  Dossier captures : {motion_captures_dir}")
+    print(f"  Dossier MP3      : {MP3_DIR}")
     print()
     app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
