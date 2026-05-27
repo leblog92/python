@@ -1,9 +1,31 @@
-# Python cache
-**/__pycache__/
-**/*.pyc
-ear/meteo/.env.example
+# ── Secrets — NE JAMAIS COMMITTER ────────────────────────────────────────────
+.env
+*.env
+.env.local
 ear/meteo/.env
 ear/meteo/.env.local
 ear/meteo/*.env
+flux/.env
+
+# ── Données locales (générées à l'exécution) ──────────────────────────────────
 flux/jvo_debug.log
 flux/cam.html
+flux/mp3_labels.json
+flux/mp3_order.json
+flux/phrases.json
+flux/timer_schedule.json
+flux/*.py.old
+flux/*.py.good
+flux/*.py.bak
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
