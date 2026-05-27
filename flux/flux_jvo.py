@@ -698,6 +698,13 @@ def delete_mp3():
     if not os.path.exists(path):
         return jsonify({"status": "error", "message": "Fichier introuvable"}), 404
     try:
+        # Arrêter la lecture avant de supprimer (libère le verrou sur le fichier)
+        try:
+            pygame.mixer.music.stop()
+            pygame.mixer.music.unload()
+            time.sleep(0.1)
+        except Exception:
+            pass
         os.remove(path)
         return jsonify({"status": "ok"})
     except Exception as e:
@@ -1019,10 +1026,7 @@ h1{{font-size:1.05rem;font-weight:600;letter-spacing:.04em}}
 .video-panel{{background:#000;display:flex;align-items:center;justify-content:center;
               overflow:hidden;position:relative}}
 .video-panel img{{width:100%;height:100%;object-fit:contain}}
-.pip-btn{{position:absolute;bottom:10px;right:10px;background:rgba(0,0,0,.65);
-          border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:6px;
-          padding:5px 11px;font-size:.75rem;cursor:pointer;z-index:10;transition:background .2s}}
-.pip-btn:hover{{background:rgba(79,142,247,.75)}}
+
 .ctrl-panel{{background:var(--surface);border-left:1px solid var(--border);
              display:flex;flex-direction:column;overflow:hidden;height:100%}}
 .tabs{{display:flex;border-bottom:1px solid var(--border);flex-shrink:0}}
@@ -1101,6 +1105,46 @@ input[type=file]{{display:none}}
 .timer-log{{max-height:85px;overflow-y:auto;font-size:.71rem;color:var(--muted);
             font-family:monospace;margin-top:4px;
             scrollbar-width:thin;scrollbar-color:var(--border) transparent}}
+/* ── Tags MP3 ── */
+.tag-group{{border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:4px}}
+.tag-header{{display:flex;align-items:center;justify-content:space-between;
+             padding:7px 10px;cursor:pointer;background:#111;
+             transition:background .15s;user-select:none}}
+.tag-header:hover{{background:#181828}}
+.tag-name{{font-size:.8rem;font-weight:600;color:var(--accent);display:flex;align-items:center;gap:6px}}
+.tag-count{{font-size:.7rem;color:var(--muted);font-weight:400}}
+.tag-chevron{{font-size:.65rem;color:var(--muted);transition:transform .2s}}
+.tag-chevron.open{{transform:rotate(90deg)}}
+.tag-body{{display:none;flex-direction:column;gap:3px;padding:6px 8px;background:#0d0d0d}}
+.tag-body.open{{display:flex}}
+.mp3-row{{display:flex;align-items:center;gap:5px;padding:4px 6px;
+          border-radius:6px;transition:background .15s}}
+.mp3-row:hover{{background:#1a1a1a}}
+.mp3-name-lbl{{flex:1;font-size:.79rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+.mp3-alias-lbl{{font-size:.69rem;color:var(--muted)}}
+/* ── Collapse ── */
+.card-collapsible .card-body{{overflow:hidden;transition:max-height .25s ease}}
+.card-collapsible.collapsed .card-body{{max-height:0!important}}
+.card-title-row{{display:flex;align-items:center;justify-content:space-between;cursor:pointer;margin-bottom:0}}
+.card-title-row h2{{margin-bottom:0;cursor:pointer}}
+.collapse-btn{{background:none;border:none;color:var(--muted);font-size:.9rem;cursor:pointer;
+               padding:0 2px;line-height:1;transition:transform .2s;flex-shrink:0}}
+.card-collapsible:not(.collapsed) .collapse-btn{{transform:rotate(0deg)}}
+.card-collapsible.collapsed .collapse-btn{{transform:rotate(-90deg)}}
+.card-collapsible:not(.collapsed) .card-body{{margin-top:9px}}
+/* ── Bibliothèque audio plein panneau ── */
+#audioLibFull{{display:flex;flex-direction:column;height:100%;overflow:hidden}}
+#audioLibFull .lib-top{{flex-shrink:0;padding:10px 13px 6px;border-bottom:1px solid var(--border);
+                        display:flex;gap:6px;align-items:center}}
+#audioLibFull .lib-search{{flex:1;background:#111;border:1px solid var(--border);border-radius:6px;
+                           color:var(--text);padding:6px 9px;font-size:.82rem;outline:none}}
+#audioLibFull .lib-search:focus{{border-color:var(--accent)}}
+#audioLibFull .lib-scroll{{flex:1;overflow-y:auto;padding:8px 13px;
+                           scrollbar-width:thin;scrollbar-color:var(--border) transparent}}
+#stopBar{{flex-shrink:0;padding:8px 13px;border-top:1px solid var(--border);
+          display:flex;gap:6px;align-items:center;background:var(--surface)}}
+#nowPlaying{{flex:1;font-size:.75rem;color:var(--muted);overflow:hidden;
+             text-overflow:ellipsis;white-space:nowrap}}
 .modal-bg{{display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.75);
            align-items:center;justify-content:center}}
 .modal-bg.open{{display:flex}}
@@ -1125,7 +1169,6 @@ input[type=file]{{display:none}}
 <div class="layout">
   <div class="video-panel">
     <img id="videoFeed" src="/video_feed" alt="Flux vid&eacute;o">
-    <button class="pip-btn" onclick="pipToggle()" id="pipBtn">&#x29C9; PiP</button>
   </div>
   <div class="ctrl-panel">
     <div class="tabs">
@@ -1163,26 +1206,36 @@ input[type=file]{{display:none}}
     </div>
 
     <!-- onglet MP3 -->
-    <div class="tab-content" id="pane-mp3">
-      <div class="card">
-        <h2>Ajouter un fichier</h2>
-        <label class="upload-area" for="mp3Input" id="dropZone">
-          &#128194; Cliquez ou d&eacute;posez MP3 / WAV / OGG
-        </label>
-        <input type="file" id="mp3Input" accept=".mp3,.wav,.ogg" onchange="uploadMP3(this.files[0])">
+    <div class="tab-content" id="pane-mp3" style="padding:0;gap:0;overflow:hidden;height:100%">
+      <!-- Upload collapsible -->
+      <div class="card card-collapsible" id="uploadCard"
+           style="border-radius:0;border-left:none;border-right:none;border-top:none;flex-shrink:0;padding-bottom:24px">
+        <div class="card-title-row" onclick="collapseCard('uploadCard')">
+          <h2 style="margin-bottom:0">&#128194; Ajouter un fichier</h2>
+          <button class="collapse-btn" tabindex="-1">&#9656;</button>
+        </div>
+        <div class="card-body" style="max-height:120px">
+          <label class="upload-area" for="mp3Input" id="dropZone">
+            Cliquez ou d&eacute;posez MP3 / WAV / OGG
+          </label>
+          <input type="file" id="mp3Input" accept=".mp3,.wav,.ogg" onchange="uploadMP3(this.files[0])">
+        </div>
       </div>
-      <div class="card">
-        <h2 style="justify-content:space-between">
-          <span>Biblioth&egrave;que audio</span>
-          <div style="display:flex;gap:5px">
-            <button class="btn btn-ghost" style="font-size:.68rem;padding:2px 6px" onclick="loadMP3List()">&#8635;</button>
-            <button class="btn btn-danger" style="font-size:.68rem;padding:2px 6px" onclick="stopAudio()">&#9632; Stop</button>
-          </div>
-        </h2>
-        <p style="font-size:.71rem;color:var(--muted);margin-bottom:6px">
-          &#9776; glisser &middot; &#9998; renommer &middot; &#128465; supprimer
-        </p>
-        <ul id="mp3List"><li style="color:var(--muted);font-size:.79rem">Chargement&hellip;</li></ul>
+      <!-- Bibliothèque plein panneau avec tags -->
+      <div id="audioLibFull">
+        <div class="lib-top">
+          <span style="font-size:.73rem;color:var(--muted);white-space:nowrap">&#127925; Biblioth&egrave;que</span>
+          <input type="text" class="lib-search" id="mp3Search" placeholder="Rechercher&hellip;" oninput="filterTags()">
+          <button class="btn btn-ghost" style="font-size:.7rem;padding:4px 7px" onclick="loadMP3List()" title="Actualiser">&#8635;</button>
+          <button class="btn btn-ghost" style="font-size:.7rem;padding:4px 7px" onclick="toggleAllTags()" title="Tout ouvrir/fermer">&#9723;</button>
+        </div>
+        <div class="lib-scroll" id="tagContainer">
+          <div style="color:var(--muted);font-size:.79rem;padding:12px 0">Chargement&hellip;</div>
+        </div>
+        <div id="stopBar">
+          <span id="nowPlaying">Aucune lecture</span>
+          <button class="btn btn-danger" style="font-size:.75rem;padding:5px 11px" onclick="stopAudio()">&#9632; Stop</button>
+        </div>
       </div>
     </div>
 
@@ -1239,30 +1292,7 @@ input[type=file]{{display:none}}
           <div class="toggle-pill" id="captureToggle" onclick="toggleCaptures()"></div>
         </div>
       </div>
-      <div class="card">
-        <h2>PiP &ndash; Fen&ecirc;tre flottante</h2>
-        <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">
-          <label style="font-size:.77rem;color:var(--muted);width:58px">Largeur</label>
-          <input type="range" id="pipW" min="200" max="900" step="10" value="480"
-                 style="flex:1;accent-color:var(--accent)"
-                 oninput="document.getElementById('pipWL').textContent=this.value+'px'">
-          <span id="pipWL" style="font-size:.73rem;color:var(--muted);width:42px">480px</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:7px;margin-bottom:9px">
-          <label style="font-size:.77rem;color:var(--muted);width:58px">Hauteur</label>
-          <input type="range" id="pipH" min="120" max="600" step="10" value="270"
-                 style="flex:1;accent-color:var(--accent)"
-                 oninput="document.getElementById('pipHL').textContent=this.value+'px'">
-          <span id="pipHL" style="font-size:.73rem;color:var(--muted);width:42px">270px</span>
-        </div>
-        <div class="btn-row">
-          <button class="btn btn-primary" id="pipOpenBtn" onclick="pipOpen()">&#x29C9; Ouvrir PiP</button>
-          <button class="btn btn-ghost" id="pipCloseBtn" onclick="pipClose()" style="display:none">&times; Fermer PiP</button>
-        </div>
-        <p style="font-size:.69rem;color:var(--muted);margin-top:6px">
-          Redimensionnez librement apr&egrave;s ouverture.
-        </p>
-      </div>
+
     </div>
 
     <!-- onglet Ecoute -->
@@ -1328,36 +1358,8 @@ var feed = document.getElementById('videoFeed');
 feed.onerror = function() {{ feed.src = SERVER + '/video_feed?t=' + Date.now(); }};
 setInterval(function() {{ feed.src = SERVER + '/video_feed?t=' + Date.now(); }}, 30000);
 
-// PiP
-var pipWin = null;
-function pipOpen() {{
-  var w = parseInt(document.getElementById('pipW').value);
-  var h = parseInt(document.getElementById('pipH').value);
-  var l = screen.width - w - 20;
-  var tp = screen.height - h - 60;
-  pipWin = window.open('', 'jvo_pip',
-    'width=' + w + ',height=' + h + ',left=' + l + ',top=' + tp +
-    ',resizable=yes,scrollbars=no,status=no,menubar=no,toolbar=no');
-  if (!pipWin) {{ toast('Autorisez les popups puis reessayez', 'err'); return; }}
-  pipWin.document.write('<!DOCTYPE html><html><head><title>JVO PiP</title>' +
-    '<style>*{{margin:0;padding:0}}body{{background:#000;overflow:hidden}}' +
-    'img{{width:100vw;height:100vh;object-fit:contain}}</style></head>' +
-    '<body><img src="' + SERVER + '/video_feed"></body></html>');
-  pipWin.document.close();
-  pipWin.onbeforeunload = function() {{ pipWin = null; pipSync(false); }};
-  pipSync(true);
-  toast('Fenetre PiP ouverte');
-}}
-function pipClose() {{
-  if (pipWin && !pipWin.closed) pipWin.close();
-  pipWin = null; pipSync(false);
-}}
-function pipToggle() {{ if (pipWin && !pipWin.closed) pipClose(); else pipOpen(); }}
-function pipSync(open) {{
-  document.getElementById('pipBtn').textContent = open ? 'x Fermer PiP' : '\u29c9 PiP';
-  document.getElementById('pipOpenBtn').style.display  = open ? 'none' : '';
-  document.getElementById('pipCloseBtn').style.display = open ? '' : 'none';
-}}
+// PiP supprimé
+
 
 // TTS
 async function sendTTS() {{
@@ -1450,9 +1452,17 @@ async function deletePhrase(id) {{
   }} catch(e) {{ toast('Connexion impossible', 'err'); }}
 }}
 
-// MP3
-var mp3Labels = {{}};
-var dragSrc = null;
+// ── Collapse cards ───────────────────────────
+function collapseCard(id) {{
+  var card = document.getElementById(id);
+  card.classList.toggle('collapsed');
+}}
+
+// ── MP3 avec tags ─────────────────────────────
+var mp3Labels   = {{}};
+var _allFiles   = [];
+var _openTags   = {{}};  // tag → true/false
+var _allTagsOpen = true;
 
 async function loadMP3List() {{
   try {{
@@ -1461,89 +1471,113 @@ async function loadMP3List() {{
     var df = await rf.json();
     var dl = await rl.json();
     mp3Labels = dl.labels || {{}};
-    buildMP3List(df.files || []);
+    _allFiles = df.files || [];
+    buildTagView(_allFiles);
   }} catch(e) {{ console.error('loadMP3List', e); }}
 }}
 
-function buildMP3List(files) {{
-  var ul = document.getElementById('mp3List');
-  ul.innerHTML = '';
-  if (!files.length) {{
-    ul.innerHTML = '<li style="color:var(--muted);font-size:.79rem">Aucun fichier audio</li>';
+// Extrait le tag d'un nom de fichier : "tag_nomfichier.mp3" → "tag"
+// Si pas de underscore → tag = "_sans tag_"
+function getTag(fname) {{
+  // Priorité : libellé stocké dans mp3Labels
+  if (mp3Labels[fname]) return mp3Labels[fname];
+  // Fallback : préfixe avant le premier '_' dans le nom de fichier
+  var base = fname.replace(/[.][^.]+$/, '');
+  var idx  = base.indexOf('_');
+  return idx > 0 ? base.substring(0, idx) : '— sans tag —';
+}}
+
+function buildTagView(files) {{
+  var q   = (document.getElementById('mp3Search') || {{}}).value || '';
+  var low = q.toLowerCase();
+  // Filtrer sur nom de fichier OU tag
+  var filtered = low ? files.filter(function(f) {{
+    return f.toLowerCase().includes(low) || getTag(f).toLowerCase().includes(low);
+  }}) : files;
+
+  // Grouper par tag
+  var groups = {{}};
+  filtered.forEach(function(f) {{
+    var tag = getTag(f);
+    if (!groups[tag]) groups[tag] = [];
+    groups[tag].push(f);
+  }});
+  var tags = Object.keys(groups).sort(function(a,b) {{ return a.localeCompare(b,'fr'); }});
+
+  var container = document.getElementById('tagContainer');
+  container.innerHTML = '';
+
+  if (!tags.length) {{
+    container.innerHTML = '<div style="color:var(--muted);font-size:.79rem;padding:12px 0">Aucun fichier</div>';
     return;
   }}
-  files.forEach(function(fname) {{
-    var alias = mp3Labels[fname] || '';
-    var li = document.createElement('li');
-    li.className = 'mp3-item'; li.draggable = true;
-    li.setAttribute('data-fname', fname);
 
-    var row1 = document.createElement('div'); row1.className = 'mp3-row1';
-    var handle = document.createElement('span');
-    handle.className = 'mp3-handle'; handle.textContent = '\u2630'; handle.title = 'Glisser';
-    var info = document.createElement('div'); info.style.cssText = 'flex:1;overflow:hidden';
-    var lbl = document.createElement('div');
-    lbl.className = 'mp3-label'; lbl.textContent = alias || fname; lbl.title = fname;
-    info.appendChild(lbl);
-    if (alias) {{
-      var sub = document.createElement('div');
-      sub.className = 'mp3-alias'; sub.textContent = fname;
-      info.appendChild(sub);
-    }}
-    row1.appendChild(handle); row1.appendChild(info);
+  tags.forEach(function(tag) {{
+    var isOpen = (_openTags[tag] !== undefined) ? _openTags[tag] : false;
+    var grp = document.createElement('div'); grp.className = 'tag-group';
 
-    var acts = document.createElement('div'); acts.className = 'mp3-actions';
-    var bPlay = document.createElement('button');
-    bPlay.className = 'btn btn-success'; bPlay.textContent = '\u25b6 Jouer';
-    bPlay.onclick = (function(fn) {{ return function() {{ playMP3(fn); }}; }})(fname);
-    var bRen = document.createElement('button');
-    bRen.className = 'btn btn-ghost'; bRen.textContent = '\u270e';
-    bRen.title = 'Renommer';
-    bRen.onclick = (function(fn) {{ return function() {{ renameOpen(fn); }}; }})(fname);
-    var bDel = document.createElement('button');
-    bDel.className = 'btn btn-danger'; bDel.textContent = '\u00d7';
-    bDel.title = 'Supprimer';
-    bDel.onclick = (function(fn) {{ return function() {{ deleteMP3(fn); }}; }})(fname);
-    acts.appendChild(bPlay); acts.appendChild(bRen); acts.appendChild(bDel);
+    var hdr = document.createElement('div'); hdr.className = 'tag-header';
+    hdr.innerHTML =
+      '<div class="tag-name">' +
+        '<span class="tag-chevron' + (isOpen ? ' open' : '') + '">&#9656;</span>' +
+        tag +
+        '<span class="tag-count">' + groups[tag].length + '</span>' +
+      '</div>';
+    hdr.onclick = (function(t, g) {{ return function() {{
+      var body = g.querySelector('.tag-body');
+      var chev = g.querySelector('.tag-chevron');
+      var open = body.classList.toggle('open');
+      chev.classList.toggle('open', open);
+      _openTags[t] = open;
+    }}; }})(tag, grp);
 
-    li.appendChild(row1); li.appendChild(acts);
+    var body = document.createElement('div');
+    body.className = 'tag-body' + (isOpen ? ' open' : '');
 
-    li.addEventListener('dragstart', function(e) {{
-      dragSrc = li; li.style.opacity = '.4';
-      e.dataTransfer.effectAllowed = 'move';
+    groups[tag].forEach(function(fname) {{
+      var row = document.createElement('div'); row.className = 'mp3-row';
+
+      var info = document.createElement('div'); info.style.cssText = 'flex:1;overflow:hidden';
+      // Nom de fichier sans extension — seul affiché (le tag est déjà dans l'en-tête)
+      var lbl  = document.createElement('div'); lbl.className = 'mp3-name-lbl';
+      lbl.textContent = fname.replace(/[.][^.]+$/, ''); lbl.title = fname;
+      info.appendChild(lbl);
+
+      var bPlay = document.createElement('button');
+      bPlay.className = 'btn btn-success'; bPlay.style.cssText = 'font-size:.72rem;padding:3px 8px';
+      bPlay.textContent = '\u25b6';
+      bPlay.onclick = (function(fn) {{ return function() {{ playMP3(fn); }}; }})(fname);
+
+      var bRen = document.createElement('button');
+      bRen.className = 'btn btn-ghost'; bRen.style.cssText = 'font-size:.72rem;padding:3px 7px';
+      bRen.textContent = '\u270e'; bRen.title = 'Renommer';
+      bRen.onclick = (function(fn) {{ return function() {{ renameOpen(fn); }}; }})(fname);
+
+      var bDel = document.createElement('button');
+      bDel.className = 'btn btn-danger'; bDel.style.cssText = 'font-size:.72rem;padding:3px 7px';
+      bDel.textContent = '\u00d7'; bDel.title = 'Supprimer';
+      bDel.onclick = (function(fn) {{ return function() {{ deleteMP3(fn); }}; }})(fname);
+
+      row.appendChild(info); row.appendChild(bPlay); row.appendChild(bRen); row.appendChild(bDel);
+      body.appendChild(row);
     }});
-    li.addEventListener('dragend', function() {{ li.style.opacity = ''; }});
-    li.addEventListener('dragover', function(e) {{
-      e.preventDefault(); e.dataTransfer.dropEffect = 'move';
-      ul.querySelectorAll('.mp3-item').forEach(function(i) {{ i.classList.remove('drag-over'); }});
-      li.classList.add('drag-over');
-    }});
-    li.addEventListener('dragleave', function() {{ li.classList.remove('drag-over'); }});
-    li.addEventListener('drop', function(e) {{
-      e.preventDefault(); li.classList.remove('drag-over');
-      if (dragSrc && dragSrc !== li) {{
-        var items = Array.from(ul.querySelectorAll('.mp3-item'));
-        if (items.indexOf(dragSrc) < items.indexOf(li))
-          ul.insertBefore(dragSrc, li.nextSibling);
-        else
-          ul.insertBefore(dragSrc, li);
-        saveMP3Order();
-      }}
-    }});
-    ul.appendChild(li);
+
+    grp.appendChild(hdr); grp.appendChild(body);
+    container.appendChild(grp);
   }});
 }}
 
-async function saveMP3Order() {{
-  var order = Array.from(document.querySelectorAll('#mp3List .mp3-item'))
-                   .map(function(li) {{ return li.getAttribute('data-fname'); }});
-  try {{
-    await fetch(SERVER + '/mp3_order', {{
-      method: 'POST', headers: {{'Content-Type': 'application/json'}},
-      body: JSON.stringify({{order: order}})
-    }});
-    toast('Ordre sauvegarde');
-  }} catch(e) {{ toast('Erreur ordre', 'err'); }}
+function filterTags() {{ buildTagView(_allFiles); }}
+
+function toggleAllTags() {{
+  _allTagsOpen = !_allTagsOpen;
+  document.querySelectorAll('.tag-body').forEach(function(b) {{
+    b.classList.toggle('open', _allTagsOpen);
+  }});
+  document.querySelectorAll('.tag-chevron').forEach(function(ch) {{
+    ch.classList.toggle('open', _allTagsOpen);
+  }});
+  Object.keys(_openTags).forEach(function(k) {{ _openTags[k] = _allTagsOpen; }});
 }}
 
 async function playMP3(fname) {{
@@ -1553,14 +1587,20 @@ async function playMP3(fname) {{
       body: JSON.stringify({{filename: fname}})
     }});
     var d = await r.json();
-    if (d.status === 'ok') toast('\u25b6 ' + (mp3Labels[fname] || fname));
-    else toast('Erreur: ' + d.message, 'err');
+    if (d.status === 'ok') {{
+      var label = mp3Labels[fname] || fname.replace(/[.][^.]+$/, '');
+      document.getElementById('nowPlaying').textContent = '\u25b6 ' + label;
+      toast('\u25b6 ' + label);
+    }} else toast('Erreur: ' + d.message, 'err');
   }} catch(e) {{ toast('Connexion impossible', 'err'); }}
 }}
 
 async function stopAudio() {{
-  try {{ await fetch(SERVER + '/stop_audio', {{method: 'POST'}}); toast('Audio arrete'); }}
-  catch(e) {{ toast('Connexion impossible', 'err'); }}
+  try {{
+    await fetch(SERVER + '/stop_audio', {{method: 'POST'}});
+    document.getElementById('nowPlaying').textContent = 'Aucune lecture';
+    toast('Audio arrete');
+  }} catch(e) {{ toast('Connexion impossible', 'err'); }}
 }}
 
 async function deleteMP3(fname) {{
@@ -1575,6 +1615,9 @@ async function deleteMP3(fname) {{
     else toast('Erreur : ' + d.message, 'err');
   }} catch(e) {{ toast('Connexion impossible', 'err'); }}
 }}
+
+// saveMP3Order conservé pour compatibilité (drag-and-drop supprimé mais route toujours là)
+async function saveMP3Order() {{}}
 
 // Modal renommer
 var _renTarget = '';
