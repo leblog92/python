@@ -1004,6 +1004,7 @@ def route_mic_stop():
 
 @app.route('/ngrok_url')
 def get_ngrok_url():
+    # Route publique — l'URL ngrok n'est pas un secret
     return jsonify({"url": ngrok_public_url})
 
 
@@ -1446,6 +1447,7 @@ input[type=file]{{display:none}}
 <div id="toast"></div>
 <script>
 const SERVER = 'http://{ip}:5000';
+  const NGROK_URL = {__import__('json').dumps(ngrok_public_url)};
 
 // Onglets
 function switchTab(name) {{
@@ -1456,25 +1458,43 @@ function switchTab(name) {{
   if (name === 'mp3')   loadMP3List();
 
 // ── ngrok URL ─────────────────────────────────
-(async function checkNgrok() {{
-  try {{
-    const r = await fetch(SERVER + '/ngrok_url');
-    const d = await r.json();
-    if (d.url) {{
-      document.getElementById('ngrokBar').style.display = 'flex';
-      document.getElementById('ngrokLink').href = d.url;
-      document.getElementById('ngrokLink').textContent = d.url;
-    }} else {{
-      // Réessayer toutes les 3 s pendant 30 s (ngrok peut mettre du temps)
-      if ((checkNgrok._tries = (checkNgrok._tries||0) + 1) < 10)
-        setTimeout(checkNgrok, 3000);
-    }}
-  }} catch(e) {{}}
-}})();
+// Afficher URL ngrok (injectée au chargement ou récupérée via fetch)
+function showNgrokBar(url) {{
+  if (!url) return;
+  document.getElementById('ngrokBar').style.display = 'flex';
+  document.getElementById('ngrokLink').href = url;
+  document.getElementById('ngrokLink').textContent = url;
+}}
+
+if (NGROK_URL) {{
+  showNgrokBar(NGROK_URL);
+}} else {{
+  // Fallback : poll toutes les 3s si ngrok n'était pas encore prêt au chargement
+  (function pollNgrok(tries) {{
+    fetch(SERVER + '/ngrok_url', {{credentials: 'same-origin'}})
+      .then(function(r) {{ return r.json(); }})
+      .then(function(d) {{
+        if (d.url) {{ showNgrokBar(d.url); }}
+        else if (tries < 10) {{ setTimeout(function() {{ pollNgrok(tries+1); }}, 3000); }}
+      }}).catch(function() {{
+        if (tries < 10) {{ setTimeout(function() {{ pollNgrok(tries+1); }}, 3000); }}
+      }});
+  }})(0);
+}}
 
 function copyNgrok() {{
   var url = document.getElementById('ngrokLink').textContent;
-  navigator.clipboard.writeText(url).then(function() {{ toast('URL copiée !'); }});
+  if (navigator.clipboard && navigator.clipboard.writeText) {{
+    navigator.clipboard.writeText(url).then(function() {{ toast('URL copiée !'); }});
+  }} else {{
+    // Fallback HTTP (clipboard API indisponible hors HTTPS)
+    var ta = document.createElement('textarea');
+    ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    toast('URL copiée !');
+  }}
 }}
   if (name === 'timer') {{ startTimerClock(); loadTimerStatus(); }}
 }}
