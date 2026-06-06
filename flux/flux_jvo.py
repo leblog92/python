@@ -266,30 +266,17 @@ os.makedirs(TIMER_DIR, exist_ok=True)
 
 audio_lock = threading.Lock()
 
-def play_mp3_file(path: str, repeat: int = 1, stop_event: threading.Event = None):
-    """
-    Joue un fichier MP3/WAV dans un thread dédié.
-    repeat=0 → infini, repeat=N → N fois.
-    stop_event : si fourni, s'arrête dès qu'il est set.
-    """
+def play_mp3_file(path: str):
+    """Joue un fichier MP3/WAV dans un thread dédié."""
     def _run():
         with audio_lock:
-            played = 0
-            while (repeat == 0 or played < repeat):
-                if stop_event and stop_event.is_set():
-                    break
-                try:
-                    pygame.mixer.music.load(path)
-                    pygame.mixer.music.play()
-                    while pygame.mixer.music.get_busy():
-                        if stop_event and stop_event.is_set():
-                            pygame.mixer.music.stop()
-                            return
-                        time.sleep(0.1)
-                    played += 1
-                except Exception as e:
-                    print(f"Erreur lecture audio: {e}")
-                    break
+            try:
+                pygame.mixer.music.load(path)
+                pygame.mixer.music.play()
+                while pygame.mixer.music.get_busy():
+                    time.sleep(0.1)
+            except Exception as e:
+                print(f"Erreur lecture audio: {e}")
     threading.Thread(target=_run, daemon=True).start()
 
 # ─────────────────────────────────────────────
@@ -742,28 +729,20 @@ def set_volume():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-_repeat_stop = threading.Event()   # signal d'arrêt pour boucles
-
 @app.route('/play_mp3', methods=['POST'])
 @api_auth
 def play_mp3():
-    """
-    POST JSON : {"filename": "alerte.mp3", "repeat": 3}
-    repeat=0 → infini, repeat=1 (défaut) → une fois
-    """
-    global _repeat_stop
+    """POST JSON : {"filename": "alerte.mp3"}"""
     data     = request.get_json(silent=True) or {}
     filename = data.get('filename', '').strip()
-    repeat   = int(data.get('repeat', 1))
     if not filename:
         return jsonify({"status": "error", "message": "Champ 'filename' manquant"}), 400
     path = os.path.join(MP3_DIR, os.path.basename(filename))
     if not os.path.exists(path):
         return jsonify({"status": "error", "message": f"Fichier introuvable: {filename}"}), 404
-    print(f"[AUDIO] ← lecture {filename} x{repeat if repeat else '∞'}")
-    _repeat_stop.clear()
-    play_mp3_file(path, repeat=repeat, stop_event=_repeat_stop)
-    return jsonify({"status": "ok", "filename": filename, "repeat": repeat})
+    print(f"[AUDIO] ← lecture {filename}")
+    play_mp3_file(path)
+    return jsonify({"status": "ok", "filename": filename})
 
 
 # ── Mode absent ───────────────────────────────
@@ -873,7 +852,6 @@ def delete_snapshot(filename):
 def stop_audio():
     """Arrête la lecture audio en cours (y compris boucles repeat)."""
     try:
-        _repeat_stop.set()
         pygame.mixer.music.stop()
         print("[AUDIO] Lecture arrêtée")
         return jsonify({"status": "ok"})
@@ -1476,23 +1454,13 @@ input[type=file]{{display:none}}
         <input type="file" id="mp3Input" accept=".mp3,.wav,.ogg" onchange="uploadMP3(this.files[0])">
       </div>
       <!-- Bibliothèque plein panneau avec tags -->
-      <!-- Volume + annonce en boucle -->
+      <!-- Volume -->
       <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;
                   background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0">
         <span style="font-size:.72rem;color:var(--muted);white-space:nowrap">&#128266;</span>
         <input type="range" id="volumeSlider" min="0" max="100" value="80" step="1"
                style="flex:1;accent-color:var(--accent)" oninput="onVolumeChange(this.value)">
         <span id="volumeLabel" style="font-size:.72rem;color:var(--muted);width:30px;text-align:right">80%</span>
-        <span style="color:var(--border)">|</span>
-        <span style="font-size:.72rem;color:var(--muted);white-space:nowrap">Boucle</span>
-        <select id="repeatSelect" style="background:#111;border:1px solid var(--border);
-                color:var(--text);border-radius:5px;font-size:.72rem;padding:2px 4px">
-          <option value="1">×1</option>
-          <option value="2">×2</option>
-          <option value="3">×3</option>
-          <option value="5">×5</option>
-          <option value="0">∞</option>
-        </select>
       </div>
       <div id="audioLibFull">
         <div class="lib-top">
@@ -1871,18 +1839,7 @@ fetch(SERVER + '/set_volume', {{
   body: JSON.stringify({{volume: 0.8}})
 }});
 
-// Injecter repeat dans les appels play_mp3 (patchons playMp3 existant)
-var _origPlayMp3 = window.playMp3;
-function playMp3(filename) {{
-  var repeat = parseInt(document.getElementById('repeatSelect').value, 10);
-  fetch(SERVER + '/play_mp3', {{
-    method: 'POST', credentials: 'same-origin',
-    headers: {{'Content-Type': 'application/json'}},
-    body: JSON.stringify({{filename: filename, repeat: repeat}})
-  }}).then(function(r) {{ return r.json(); }}).then(function(d) {{
-    if (d.status !== 'ok') toast('Erreur lecture', 'err');
-  }}).catch(function() {{ toast('Connexion impossible', 'err'); }});
-}}
+
 
 // ── Snapshots ──────────────────────────────────
 async function takeSnapshot() {{
