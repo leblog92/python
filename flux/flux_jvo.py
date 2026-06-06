@@ -423,7 +423,7 @@ motion_captures_dir = os.path.join(user_profile, 'Pictures', 'motion_captures')
 os.makedirs(motion_captures_dir, exist_ok=True)
 
 
-_capture_queue = queue.Queue(maxsize=10)
+_capture_queue = queue.Queue(maxsize=20)
 
 def _capture_writer():
     """Thread dedié ecriture captures disque - n'a jamais bloqué le stream."""
