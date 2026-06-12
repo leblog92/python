@@ -1,1 +1,1 @@
-python viewer.py
+pythonw viewer.py
