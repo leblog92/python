@@ -8,6 +8,11 @@ Dependances :
 Utilisation :
     python visionneuse_images.py [dossier]
 
+Pour lancer SANS la fenetre noire (console cmd) sous Windows :
+    pythonw visionneuse_images.py [dossier]
+    -> ou bien renommer le fichier en  visionneuse_images.pyw
+       et double-cliquer dessus.
+
 Si aucun dossier n'est passe en argument, un selecteur s'ouvre.
 
 Navigation :
@@ -206,7 +211,12 @@ class Visionneuse(tk.Tk):
         # Redimensionnement differe : on ne reajuste l'image qu'apres
         # que la fenetre se soit stabilisee (evite l'effet d'agrandissement).
         self._resize_job = None
+        self._derniere_taille = (0, 0)
         self.canvas.bind("<Configure>", self._sur_redimension)
+
+        # Stabilise la fenetre a sa taille definitive AVANT le premier rendu,
+        # pour eviter l'effet d'agrandissement progressif au demarrage.
+        self.update_idletasks()
 
         if dossier:
             self.charger_dossier(dossier)
@@ -220,10 +230,15 @@ class Visionneuse(tk.Tk):
             self.suivante()
 
     def _sur_redimension(self, event):
-        """Redimensionnement differe : ne rejoue le rendu qu'une fois stabilise."""
+        """Redimensionnement differe : ne rejoue le rendu qu'une fois stabilise,
+        et seulement si la taille du canvas a reellement change."""
+        taille = (event.width, event.height)
+        if taille == self._derniere_taille:
+            return
+        self._derniere_taille = taille
         if self._resize_job is not None:
             self.after_cancel(self._resize_job)
-        self._resize_job = self.after(120, self.ajuster_image)
+        self._resize_job = self.after(150, self.ajuster_image)
 
     def choisir_dossier(self):
         dossier = filedialog.askdirectory(title="Choisir un dossier d'images")
