@@ -1,15 +1,19 @@
 [
   {
-    "id": 4,
-    "text": "Attention, la salle fermera dans quelques minutes !",
-    "visible": true
-  },
-  {
     "id": 9,
     "text": "Bonjour, bienvenue aux ateliers multimédia ! Un membre du personnel va arriver dans quelques instants. Veuillez patienter !"
   },
   {
     "id": 11,
     "text": "Bonjour, la salle jeux vidéo ouvrira à partir de quatorze heures."
+  },
+  {
+    "id": 12,
+    "text": "Bienvenue aux ateliers multimédia ! Un membre du personnel va arriver dans quelques instants."
+  },
+  {
+    "id": 4,
+    "text": "Attention, la salle fermera dans quelques minutes !",
+    "visible": true
   }
 ]

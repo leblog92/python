@@ -399,12 +399,7 @@ def save_html_file():
     except Exception as e:
         print(f"Impossible d'écrire cam.html : {e}")
 
-    # Ouvrir directement l'interface Flask dans le navigateur
-    try:
-        webbrowser.open(server_url)
-        print(f"Navigateur ouvert sur {server_url}")
-    except Exception as e:
-        print(f"Impossible d'ouvrir le navigateur : {e}")
+
 
 
 # ─────────────────────────────────────────────
@@ -413,10 +408,12 @@ def save_html_file():
 camera = RobustCamera()
 motion_detected = False
 last_frame = None
+_latest_frame = None   # dernière frame brute pour snapshot à la demande
 motion_threshold = 1500
 capture_count = 0
 MAX_CAPTURES = 100
 SAVE_CAPTURES = False   # désactivé par défaut pour réduire l'activité fichier suspecte
+ABSENT_MODE   = False   # mode absent : message audio + capture sur mouvement
 
 user_profile = os.environ.get('USERPROFILE', os.path.expanduser('~'))
 motion_captures_dir = os.path.join(user_profile, 'Pictures', 'motion_captures')
@@ -462,7 +459,7 @@ def save_capture(frame):
 
 
 def detect_motion(current_frame):
-    global last_frame, motion_detected
+    global last_frame, motion_detected, ABSENT_MODE
     if current_frame is None:
         return False, None
     resized_frame = cv2.resize(current_frame, (640, 360))
@@ -490,7 +487,7 @@ def detect_motion(current_frame):
 
 
 def generate_frames():
-    global motion_detected
+    global motion_detected, _latest_frame
     motion_cooldown = 0
     frame_count = 0
     log.info("[STREAM] generate_frames() démarré")
@@ -504,6 +501,7 @@ def generate_frames():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             else:
                 frame_count += 1
+                _latest_frame = frame   # snapshot à la demande (global)
                 if frame_count % 100 == 0:
                     log.debug(f"[STREAM] ✓ {frame_count} frames envoyées, shape={frame.shape}")
                 if frame_count % 2 == 0:
@@ -512,6 +510,10 @@ def generate_frames():
                         if SAVE_CAPTURES:
                             log.info("[STREAM] Mouvement détecté — capture sauvegardée")
                             save_capture(frame)
+                        if ABSENT_MODE:
+                            log.info("[ABSENT] Mouvement détecté — snapshot + audio")
+                            save_capture(frame)
+                            _trigger_absent_alert()
                         motion_cooldown = 30
                 if motion_cooldown > 0:
                     motion_cooldown -= 1
@@ -651,6 +653,21 @@ def add_phrase():
     _save_phrases(phrases)
     return jsonify({"status": "ok", "phrases": phrases})
 
+@app.route('/phrases/reorder', methods=['POST'])
+@api_auth
+def reorder_phrases():
+    data    = request.get_json(force=True)
+    new_order = data.get('order', [])   # liste d'ids dans le nouvel ordre
+    phrases   = _load_phrases()
+    id_map    = {p['id']: p for p in phrases}
+    reordered = [id_map[i] for i in new_order if i in id_map]
+    # Ajouter les phrases non listées à la fin (sécurité)
+    listed_ids = set(new_order)
+    reordered += [p for p in phrases if p['id'] not in listed_ids]
+    _save_phrases(reordered)
+    return jsonify({"status": "ok", "phrases": reordered})
+
+
 @app.route('/phrases/<int:pid>', methods=['DELETE'])
 def delete_phrase(pid):
     phrases = [p for p in _load_phrases() if p['id'] != pid]
@@ -698,14 +715,25 @@ def list_mp3():
 
 
 # ── MP3 : lecture ─────────────────────────────
+@app.route('/set_volume', methods=['POST'])
+@api_auth
+def set_volume():
+    """POST JSON : {"volume": 0.8}  — 0.0 à 1.0"""
+    data = request.get_json(silent=True) or {}
+    vol  = float(data.get('volume', 1.0))
+    vol  = max(0.0, min(1.0, vol))
+    try:
+        pygame.mixer.music.set_volume(vol)
+        return jsonify({"status": "ok", "volume": vol})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route('/play_mp3', methods=['POST'])
 @api_auth
 def play_mp3():
-    """
-    POST JSON : {"filename": "alerte.mp3"}
-    Joue le fichier sur la machine caméra.
-    """
-    data = request.get_json(silent=True) or {}
+    """POST JSON : {"filename": "alerte.mp3"}"""
+    data     = request.get_json(silent=True) or {}
     filename = data.get('filename', '').strip()
     if not filename:
         return jsonify({"status": "error", "message": "Champ 'filename' manquant"}), 400
@@ -717,11 +745,112 @@ def play_mp3():
     return jsonify({"status": "ok", "filename": filename})
 
 
+# ── Mode absent ───────────────────────────────
+_absent_alert_cooldown = 0
+_absent_alert_lock = threading.Lock()
+
+def _trigger_absent_alert():
+    """Joue le fichier absent.mp3 (si présent) + capture. Cooldown 60 s."""
+    global _absent_alert_cooldown
+    with _absent_alert_lock:
+        if _absent_alert_cooldown > 0:
+            return
+        _absent_alert_cooldown = 60
+    # Son absent.mp3 dans TIMER_DIR ou MP3_DIR
+    for d in (TIMER_DIR, MP3_DIR):
+        p = os.path.join(d, 'absent.mp3')
+        if os.path.exists(p):
+            play_mp3_file(p)
+            break
+    # Décrémenter le cooldown en arrière-plan
+    def _dec():
+        import time as _t
+        for _ in range(60):
+            _t.sleep(1)
+            global _absent_alert_cooldown
+            _absent_alert_cooldown = max(0, _absent_alert_cooldown - 1)
+    threading.Thread(target=_dec, daemon=True).start()
+
+@app.route('/absent_mode', methods=['POST'])
+@api_auth
+def toggle_absent_mode():
+    global ABSENT_MODE, SAVE_CAPTURES
+    data = request.get_json(silent=True) or {}
+    ABSENT_MODE = bool(data.get('active', not ABSENT_MODE))
+    if ABSENT_MODE:
+        SAVE_CAPTURES = True   # activer aussi les captures mouvement
+    log.info(f"[ABSENT] Mode {'activé' if ABSENT_MODE else 'désactivé'}")
+    return jsonify({"status": "ok", "absent": ABSENT_MODE})
+
+@app.route('/absent_mode')
+@api_auth
+def get_absent_mode():
+    return jsonify({"absent": ABSENT_MODE})
+
+
+# ── Snapshot à la demande ────────────────────
+SNAPSHOTS_DIR = os.path.join(user_profile, 'Pictures', 'jvo_snapshots')
+os.makedirs(SNAPSHOTS_DIR, exist_ok=True)
+MAX_SNAPSHOTS = 50
+
+@app.route('/snapshot', methods=['POST'])
+@api_auth
+def take_snapshot():
+    """Capture la frame courante et la sauvegarde."""
+    global _latest_frame
+    frame = _latest_frame
+    if frame is None:
+        return jsonify({"status": "error", "message": "Aucune frame disponible"}), 503
+    ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    filename = f"snap_{ts}.jpg"
+    path     = os.path.join(SNAPSHOTS_DIR, filename)
+    try:
+        cv2.imwrite(path, frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        # Nettoyer si > MAX_SNAPSHOTS
+        files = sorted(Path(SNAPSHOTS_DIR).glob('snap_*.jpg'))
+        for old in files[:-MAX_SNAPSHOTS]:
+            old.unlink(missing_ok=True)
+        log.info(f"[SNAPSHOT] Sauvegardé : {filename}")
+        return jsonify({"status": "ok", "filename": filename})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/snapshots')
+@api_auth
+def list_snapshots():
+    """Retourne la liste des snapshots (10 plus récents)."""
+    files = sorted(Path(SNAPSHOTS_DIR).glob('snap_*.jpg'), reverse=True)
+    names = [f.name for f in files[:10]]
+    return jsonify({"snapshots": names})
+
+@app.route('/snapshots/<filename>')
+@api_auth
+def get_snapshot(filename):
+    """Sert un fichier snapshot."""
+    safe = os.path.basename(filename)
+    path = os.path.join(SNAPSHOTS_DIR, safe)
+    if not os.path.exists(path):
+        return ('', 404)
+    from flask import send_file
+    return send_file(path, mimetype='image/jpeg')
+
+@app.route('/snapshots/<filename>', methods=['DELETE'])
+@api_auth
+def delete_snapshot(filename):
+    safe = os.path.basename(filename)
+    path = Path(SNAPSHOTS_DIR) / safe
+    try:
+        path.unlink(missing_ok=True)
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 # ── MP3 : stop ────────────────────────────────
 @app.route('/stop_audio', methods=['POST'])
 @api_auth
 def stop_audio():
-    """Arrête la lecture audio en cours."""
+    """Arrête la lecture audio en cours (y compris boucles repeat)."""
     try:
         pygame.mixer.music.stop()
         print("[AUDIO] Lecture arrêtée")
@@ -1162,7 +1291,11 @@ select{{width:100%;background:#111;border:1px solid var(--border);border-radius:
         cursor:pointer;transition:border .2s;margin-bottom:7px}}
 select:focus{{border-color:var(--accent)}}
 .quick-btns{{display:flex;flex-direction:column;gap:4px}}
-.quick-item{{display:flex;align-items:center;gap:5px}}
+.quick-item{{display:flex;align-items:center;gap:5px;
+  border-radius:6px;transition:background .15s;user-select:none;cursor:grab}}
+.quick-item:active{{cursor:grabbing}}
+.quick-item.dragging{{opacity:.35}}
+.quick-item.drag-over-phrase{{outline:2px dashed var(--accent2);outline-offset:1px;border-radius:6px}}
 .quick-btn{{flex:1;background:#111;border:1px solid var(--border);border-radius:6px;
             color:var(--text);padding:6px 8px;font-size:.79rem;cursor:pointer;
             text-align:left;transition:border .2s,background .2s;
@@ -1269,15 +1402,7 @@ input[type=file]{{display:none}}
   <div class="dot"></div>
   <h1>SALLE JVO &ndash; Surveillance &amp; Diffusion</h1>
 </header>
-<div id="ngrokBar">
-  <div class="ngrok-dot"></div>
-  <span>Accès externe actif :</span>
-  <a id="ngrokLink" href="#" target="_blank"></a>
-  <button onclick="copyNgrok()" style="background:none;border:1px solid #2a4a2a;
-          color:#7ecf8e;border-radius:4px;padding:1px 7px;font-size:.7rem;cursor:pointer">
-    Copier
-  </button>
-</div>
+
 <div class="layout">
   <div class="video-panel">
     <img id="videoFeed" src="/video_feed" alt="Flux vid&eacute;o">
@@ -1319,21 +1444,24 @@ input[type=file]{{display:none}}
 
     <!-- onglet MP3 -->
     <div class="tab-content" id="pane-mp3" style="padding:0;gap:0;overflow:hidden;height:100%">
-      <!-- Upload collapsible -->
-      <div class="card card-collapsible" id="uploadCard"
-           style="border-radius:0;border-left:none;border-right:none;border-top:none;flex-shrink:0;padding-bottom:24px">
-        <div class="card-title-row" onclick="collapseCard('uploadCard')">
-          <h2 style="margin-bottom:0">&#128194; Ajouter un fichier</h2>
-          <button class="collapse-btn" tabindex="-1">&#9656;</button>
-        </div>
-        <div class="card-body" style="max-height:120px">
-          <label class="upload-area" for="mp3Input" id="dropZone">
-            Cliquez ou d&eacute;posez MP3 / WAV / OGG
-          </label>
-          <input type="file" id="mp3Input" accept=".mp3,.wav,.ogg" onchange="uploadMP3(this.files[0])">
-        </div>
+      <!-- Upload -->
+      <div class="card" id="uploadCard"
+           style="border-radius:0;border-left:none;border-right:none;border-top:none;flex-shrink:0">
+        <h2 style="margin-bottom:8px">&#128194; Ajouter un fichier</h2>
+        <label class="upload-area" for="mp3Input" id="dropZone">
+          Cliquez ou d&eacute;posez MP3 / WAV / OGG
+        </label>
+        <input type="file" id="mp3Input" accept=".mp3,.wav,.ogg" onchange="uploadMP3(this.files[0])">
       </div>
       <!-- Bibliothèque plein panneau avec tags -->
+      <!-- Volume -->
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;
+                  background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0">
+        <span style="font-size:.72rem;color:var(--muted);white-space:nowrap">&#128266;</span>
+        <input type="range" id="volumeSlider" min="0" max="100" value="80" step="1"
+               style="flex:1;accent-color:var(--accent)" oninput="onVolumeChange(this.value)">
+        <span id="volumeLabel" style="font-size:.72rem;color:var(--muted);width:30px;text-align:right">80%</span>
+      </div>
       <div id="audioLibFull">
         <div class="lib-top">
           <span style="font-size:.73rem;color:var(--muted);white-space:nowrap">&#127925; Biblioth&egrave;que</span>
@@ -1388,6 +1516,15 @@ input[type=file]{{display:none}}
 
     <!-- onglet Cam -->
     <div class="tab-content" id="pane-cam">
+      <div class="card" id="ngrokCard" style="display:none">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:8px;height:8px;border-radius:50%;background:#3ecf8e;
+                      box-shadow:0 0 6px #3ecf8e;flex-shrink:0"></div>
+          <span style="font-size:.73rem;color:var(--muted)">Accès externe :</span>
+          <a id="ngrokLink" href="#" target="_blank"
+             style="font-size:.75rem;color:#3ecf8e;word-break:break-all;text-decoration:none;font-weight:600"></a>
+        </div>
+      </div>
       <div class="card">
         <h2>Qualit&eacute; vid&eacute;o</h2>
         <div class="btn-row" id="qualityBtns">
@@ -1402,6 +1539,31 @@ input[type=file]{{display:none}}
         <div style="display:flex;align-items:center;justify-content:space-between">
           <span style="font-size:.79rem;color:var(--muted)" id="captureStatus">D&eacute;sactiv&eacute;es</span>
           <div class="toggle-pill" id="captureToggle" onclick="toggleCaptures()"></div>
+        </div>
+      </div>
+      <!-- Snapshot -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <h2 style="margin:0">&#128247; Snapshot</h2>
+          <button class="btn btn-primary" style="padding:4px 10px;font-size:.78rem"
+                  onclick="takeSnapshot()">Capturer</button>
+        </div>
+        <div id="snapshotGallery" style="display:flex;flex-wrap:wrap;gap:5px"></div>
+      </div>
+      <!-- Mode absent -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <h2 style="margin:0">&#128682; Mode absent</h2>
+            <div style="font-size:.72rem;color:var(--muted);margin-top:2px">
+              Snapshot + son sur mouvement d&eacute;tect&eacute;
+            </div>
+          </div>
+          <div class="toggle-pill" id="absentToggle" onclick="toggleAbsent()"></div>
+        </div>
+        <div id="absentStatus" style="font-size:.73rem;color:var(--muted);margin-top:6px">D&eacute;sactiv&eacute;</div>
+        <div style="font-size:.71rem;color:var(--muted);margin-top:4px">
+          Son : <code>mp3_timer/absent.mp3</code> (facultatif)
         </div>
       </div>
 
@@ -1456,14 +1618,20 @@ function switchTab(name) {{
   document.getElementById('tab-' + name).classList.add('active');
   document.getElementById('pane-' + name).classList.add('active');
   if (name === 'mp3')   loadMP3List();
+loadSnapshots();
+fetch(SERVER + '/absent_mode', {{credentials:'same-origin'}})
+  .then(function(r) {{ return r.json(); }})
+  .then(function(d) {{ _absentActive = d.absent || false; updateAbsentUI(); }})
+  .catch(function() {{}});
 
 // ── ngrok URL ─────────────────────────────────
 // Afficher URL ngrok (injectée au chargement ou récupérée via fetch)
 function showNgrokBar(url) {{
   if (!url) return;
-  document.getElementById('ngrokBar').style.display = 'flex';
-  document.getElementById('ngrokLink').href = url;
-  document.getElementById('ngrokLink').textContent = url;
+  var card = document.getElementById('ngrokCard');
+  var link = document.getElementById('ngrokLink');
+  if (card) card.style.display = '';
+  if (link) {{ link.href = url; link.textContent = url; }}
 }}
 
 if (NGROK_URL) {{
@@ -1482,20 +1650,7 @@ if (NGROK_URL) {{
   }})(0);
 }}
 
-function copyNgrok() {{
-  var url = document.getElementById('ngrokLink').textContent;
-  if (navigator.clipboard && navigator.clipboard.writeText) {{
-    navigator.clipboard.writeText(url).then(function() {{ toast('URL copiée !'); }});
-  }} else {{
-    // Fallback HTTP (clipboard API indisponible hors HTTPS)
-    var ta = document.createElement('textarea');
-    ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    toast('URL copiée !');
-  }}
-}}
+
   if (name === 'timer') {{ startTimerClock(); loadTimerStatus(); }}
 }}
 
@@ -1559,22 +1714,85 @@ async function setVoice(id) {{
   }} catch(e) {{ toast('Connexion impossible', 'err'); }}
 }}
 
-// Phrases rapides
+// Phrases rapides avec drag & drop pour réordonner
+var _dragSrcPhrase = null;
+
 function buildQuickBtns(phrases) {{
   var wrap = document.getElementById('quickBtns');
   wrap.innerHTML = '';
   phrases.forEach(function(p) {{
-    var row = document.createElement('div'); row.className = 'quick-item';
+    var row = document.createElement('div');
+    row.className = 'quick-item';
+    row.draggable = true;
+    row.dataset.pid = p.id;
+
+    // Poignée drag
+    var handle = document.createElement('span');
+    handle.textContent = '\u2630';
+    handle.title = 'Glisser pour réordonner';
+    handle.style.cssText = 'color:var(--muted);font-size:.75rem;cursor:grab;padding:0 2px;flex-shrink:0';
+
     var btn = document.createElement('button'); btn.className = 'quick-btn';
     btn.textContent = p.text; btn.title = p.text;
     btn.onclick = (function(txt) {{ return function() {{
       document.getElementById('ttsText').value = txt; sendTTS();
     }}; }})(p.text);
+
     var del = document.createElement('button');
     del.className = 'quick-del'; del.title = 'Supprimer'; del.textContent = '\u00d7';
     del.onclick = (function(pid) {{ return function() {{ deletePhrase(pid); }}; }})(p.id);
-    row.appendChild(btn); row.appendChild(del); wrap.appendChild(row);
+
+    // Drag events
+    row.addEventListener('dragstart', function(e) {{
+      _dragSrcPhrase = row;
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    }});
+    row.addEventListener('dragend', function() {{
+      row.classList.remove('dragging');
+      wrap.querySelectorAll('.drag-over-phrase').forEach(function(el) {{
+        el.classList.remove('drag-over-phrase');
+      }});
+    }});
+    row.addEventListener('dragover', function(e) {{
+      e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+      if (row !== _dragSrcPhrase) row.classList.add('drag-over-phrase');
+    }});
+    row.addEventListener('dragleave', function() {{
+      row.classList.remove('drag-over-phrase');
+    }});
+    row.addEventListener('drop', function(e) {{
+      e.preventDefault();
+      row.classList.remove('drag-over-phrase');
+      if (!_dragSrcPhrase || _dragSrcPhrase === row) return;
+      // Réinsérer dans le DOM
+      var items = Array.from(wrap.children);
+      var srcIdx = items.indexOf(_dragSrcPhrase);
+      var dstIdx = items.indexOf(row);
+      if (srcIdx < dstIdx) {{ wrap.insertBefore(_dragSrcPhrase, row.nextSibling); }}
+      else                  {{ wrap.insertBefore(_dragSrcPhrase, row); }}
+      // Sauvegarder le nouvel ordre
+      var newOrder = Array.from(wrap.children).map(function(el) {{
+        return parseInt(el.dataset.pid, 10);
+      }});
+      savePhrasesOrder(newOrder);
+    }});
+
+    row.appendChild(handle); row.appendChild(btn); row.appendChild(del);
+    wrap.appendChild(row);
   }});
+}}
+
+async function savePhrasesOrder(order) {{
+  try {{
+    var r = await fetch(SERVER + '/phrases/reorder', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{order: order}})
+    }});
+    var d = await r.json();
+    if (d.status !== 'ok') toast('Erreur sauvegarde ordre', 'err');
+  }} catch(e) {{ toast('Connexion impossible', 'err'); }}
 }}
 async function loadPhrases() {{
   try {{
@@ -1603,6 +1821,101 @@ async function deletePhrase(id) {{
     var d = await r.json();
     if (d.status === 'ok') {{ buildQuickBtns(d.phrases); toast('Phrase supprimee'); }}
   }} catch(e) {{ toast('Connexion impossible', 'err'); }}
+}}
+
+// ── Volume ────────────────────────────────────
+function onVolumeChange(val) {{
+  document.getElementById('volumeLabel').textContent = val + '%';
+  fetch(SERVER + '/set_volume', {{
+    method: 'POST', credentials: 'same-origin',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{volume: val / 100}})
+  }});
+}}
+// Appliquer volume au lancement
+fetch(SERVER + '/set_volume', {{
+  method: 'POST', credentials: 'same-origin',
+  headers: {{'Content-Type': 'application/json'}},
+  body: JSON.stringify({{volume: 0.8}})
+}});
+
+
+
+// ── Snapshots ──────────────────────────────────
+async function takeSnapshot() {{
+  try {{
+    var r = await fetch(SERVER + '/snapshot', {{method:'POST',credentials:'same-origin'}});
+    var d = await r.json();
+    if (d.status === 'ok') {{ toast('📷 Snapshot sauvegardé'); loadSnapshots(); }}
+    else toast('Erreur snapshot', 'err');
+  }} catch(e) {{ toast('Connexion impossible', 'err'); }}
+}}
+
+async function loadSnapshots() {{
+  try {{
+    var r = await fetch(SERVER + '/snapshots', {{credentials:'same-origin'}});
+    var d = await r.json();
+    renderSnapshots(d.snapshots || []);
+  }} catch(e) {{}}
+}}
+
+function renderSnapshots(names) {{
+  var g = document.getElementById('snapshotGallery');
+  if (!g) return;
+  g.innerHTML = '';
+  if (!names.length) {{
+    g.innerHTML = '<span style="font-size:.72rem;color:var(--muted)">Aucun snapshot</span>';
+    return;
+  }}
+  names.forEach(function(name) {{
+    var wrap = document.createElement('div'); wrap.className = 'snap-thumb';
+    var img  = document.createElement('img');
+    img.src  = SERVER + '/snapshots/' + encodeURIComponent(name);
+    img.alt  = name;
+    img.onclick = function() {{ window.open(img.src, '_blank'); }};
+    var del  = document.createElement('button'); del.className = 'snap-del';
+    del.textContent = '✕'; del.title = 'Supprimer';
+    del.onclick = function(e) {{
+      e.stopPropagation();
+      fetch(SERVER + '/snapshots/' + encodeURIComponent(name),
+            {{method:'DELETE',credentials:'same-origin'}})
+        .then(function() {{ loadSnapshots(); }});
+    }};
+    wrap.appendChild(img); wrap.appendChild(del); g.appendChild(wrap);
+  }});
+}}
+
+// ── Mode absent ────────────────────────────────
+var _absentActive = false;
+
+async function toggleAbsent() {{
+  _absentActive = !_absentActive;
+  try {{
+    var r = await fetch(SERVER + '/absent_mode', {{
+      method: 'POST', credentials: 'same-origin',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{active: _absentActive}})
+    }});
+    var d = await r.json();
+    _absentActive = d.absent;
+    updateAbsentUI();
+    toast(_absentActive ? '🔴 Mode absent activé' : '⚫ Mode absent désactivé');
+  }} catch(e) {{ toast('Connexion impossible', 'err'); _absentActive = !_absentActive; }}
+}}
+
+function updateAbsentUI() {{
+  var tog = document.getElementById('absentToggle');
+  var lbl = document.getElementById('absentStatus');
+  if (!tog) return;
+  if (_absentActive) {{
+    tog.classList.add('on');
+    lbl.textContent = '🔴 Actif — snapshot + son à chaque mouvement (cooldown 60 s)';
+    lbl.style.color = 'var(--red)';
+  }} else {{
+    tog.classList.remove('on');
+    lbl.textContent = 'Désactivé';
+    lbl.style.color = 'var(--muted)';
+  }}
 }}
 
 // ── Collapse cards ───────────────────────────
@@ -2133,11 +2446,24 @@ if __name__ == '__main__':
     ip_address = get_local_ip()
     # Démarrer ngrok si token présent (avant Flask pour avoir l'URL dès le départ)
     public_url = start_ngrok(port=5000)
-    print(f"\n  Interface LAN    : http://{ip_address}:5000")
+    local_url  = f"http://{ip_address}:5000"
+    print(f"\n  Interface LAN    : {local_url}")
     if public_url:
-        print(f"  Accès externe    : {public_url}  ← partager cette URL")
-    print(f"  Flux vidéo       : http://{ip_address}:5000/video_feed")
+        print(f"  Accès externe    : {public_url}")
+    print(f"  Flux vidéo       : {local_url}/video_feed")
     print(f"  Dossier captures : {motion_captures_dir}")
     print(f"  Dossier MP3      : {MP3_DIR}")
     print()
+    try:
+        rep = input("  Ouvrir le navigateur ? [O/n] : ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        rep = 'o'
+    if rep in ('', 'o', 'oui', 'y', 'yes'):
+        try:
+            webbrowser.open(local_url)
+            print("  Navigateur ouvert.\n")
+        except Exception as e:
+            print(f"  Impossible d'ouvrir le navigateur : {e}\n")
+    else:
+        print("  Navigateur non ouvert.\n")
     app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
