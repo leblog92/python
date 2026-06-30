@@ -1250,13 +1250,22 @@ def index():
 body{{background:var(--bg);color:var(--text);font-family:'Segoe UI',Arial,sans-serif;min-height:100vh}}
 header{{background:var(--surface);border-bottom:1px solid var(--border);
         padding:12px 24px;display:flex;align-items:center;gap:10px}}
+@media (max-width: 760px) {{
+  header{{padding:8px 14px}}
+  h1{{font-size:.92rem}}
+}}
 h1{{font-size:1.05rem;font-weight:600;letter-spacing:.04em}}
 .dot{{width:8px;height:8px;border-radius:50%;background:var(--accent2);
       box-shadow:0 0 6px var(--accent2);animation:pulse 2s infinite}}
 @keyframes pulse{{0%,100%{{opacity:1}}50%{{opacity:.4}}}}
 .layout{{display:grid;grid-template-columns:1fr 390px;height:calc(100vh - 49px)}}
+@media (orientation: portrait), (max-width: 760px) {{
+  .layout{{grid-template-columns:1fr;grid-template-rows:40vh 1fr;height:calc(100vh - 49px)}}
+  .video-panel{{min-height:0}}
+  .ctrl-panel{{border-left:none;border-top:1px solid var(--border)}}
+}}
 .video-panel{{background:#000;display:flex;align-items:center;justify-content:center;
-              overflow:hidden;position:relative}}
+              overflow:hidden;position:relative;min-height:0}}
 .video-panel img{{width:100%;height:100%;object-fit:contain}}
 
 .ctrl-panel{{background:var(--surface);border-left:1px solid var(--border);
@@ -1265,6 +1274,9 @@ h1{{font-size:1.05rem;font-weight:600;letter-spacing:.04em}}
 .tab{{flex:1;padding:9px 1px;font-size:.71rem;text-align:center;cursor:pointer;
       color:var(--muted);border-bottom:2px solid transparent;
       transition:color .15s,border-color .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+@media (max-width: 480px) {{
+  .tab{{font-size:.65rem;padding:8px 1px}}
+}}
 .tab.active{{color:var(--accent);border-bottom-color:var(--accent)}}
 .tab-content{{display:none;flex-direction:column;gap:13px;overflow-y:auto;padding:13px;flex:1;
               scrollbar-width:thin;scrollbar-color:var(--border) transparent}}
