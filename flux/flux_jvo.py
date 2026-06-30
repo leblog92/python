@@ -1324,6 +1324,18 @@ select:focus{{border-color:var(--accent)}}
 .mp3-alias{{font-size:.71rem;color:var(--muted);margin-top:1px}}
 .mp3-actions{{display:flex;gap:4px;margin-top:6px}}
 .mp3-actions button{{font-size:.71rem;padding:3px 7px}}
+.snap-gallery{{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));
+              gap:6px;width:100%}}
+.snap-thumb{{position:relative;aspect-ratio:4/3;border-radius:6px;overflow:hidden;
+             cursor:pointer;border:1px solid var(--border);background:#000}}
+.snap-thumb img{{width:100%;height:100%;object-fit:cover;display:block}}
+.snap-del{{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.65);
+           border:none;color:#fff;border-radius:4px;font-size:.65rem;
+           padding:1px 5px;cursor:pointer;line-height:1.5;opacity:0;
+           transition:opacity .15s}}
+.snap-thumb:hover .snap-del{{opacity:1}}
+.snap-thumb:hover img{{opacity:.8}}
+
 .upload-area{{border:2px dashed var(--border);border-radius:8px;padding:10px;
               text-align:center;cursor:pointer;font-size:.79rem;
               color:var(--muted);transition:border .2s}}
@@ -1560,7 +1572,7 @@ input[type=file]{{display:none}}
           <button class="btn btn-primary" style="padding:4px 10px;font-size:.78rem"
                   onclick="takeSnapshot()">Capturer</button>
         </div>
-        <div id="snapshotGallery" style="display:flex;flex-wrap:wrap;gap:5px"></div>
+        <div id="snapshotGallery" class="snap-gallery"></div>
       </div>
       <!-- Mode absent -->
       <div class="card">
