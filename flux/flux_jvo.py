@@ -1632,7 +1632,7 @@ input[type=file]{{display:none}}
 
 <div id="toast"></div>
 <script>
-const SERVER = 'http://{ip}:5000';
+const SERVER = window.location.origin;  // s'adapte automatiquement : LAN ou URL ngrok
   const NGROK_URL = {__import__('json').dumps(ngrok_public_url)};
 
 // Onglets
@@ -2479,7 +2479,7 @@ if __name__ == '__main__':
     print(f"  Dossier MP3      : {MP3_DIR}")
     print()
     try:
-        rep = input("  Ouvrir le navigateur ? [O/n] : ").strip().lower()
+        rep = input("  Ouvrir le navigateur ? [o/n] : ").strip().lower()
     except (EOFError, KeyboardInterrupt):
         rep = 'o'
     if rep in ('', 'o', 'oui', 'y', 'yes'):
