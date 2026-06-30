@@ -1,15 +1,23 @@
 [
   {
+    "id": 12,
+    "text": "Bienvenue aux ateliers multimédia ! Un membre du personnel va arriver dans quelques instants."
+  },
+  {
     "id": 9,
     "text": "Bonjour, bienvenue aux ateliers multimédia ! Un membre du personnel va arriver dans quelques instants. Veuillez patienter !"
   },
   {
-    "id": 11,
-    "text": "Bonjour, la salle jeux vidéo ouvrira à partir de quatorze heures."
+    "id": 16,
+    "text": "Bonjour, l'aide informatique va commencer à 14 heures."
   },
   {
-    "id": 12,
-    "text": "Bienvenue aux ateliers multimédia ! Un membre du personnel va arriver dans quelques instants."
+    "id": 13,
+    "text": "Les chaises ne doivent pas sortir de la salle. Veuillez la reposer."
+  },
+  {
+    "id": 17,
+    "text": "Bonjour, l'heure de code commencera à 14 heures !"
   },
   {
     "id": 4,
