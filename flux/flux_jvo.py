@@ -229,14 +229,26 @@ def mic_stop():
 tts_lock       = threading.Lock()
 EDGE_TTS_VOICE = "fr-FR-DeniseNeural"
 
-def _speak_edge(text: str):
+def _speak_edge(text: str, retries: int = 2):
     import asyncio, tempfile, edge_tts
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
         tmp = f.name
     try:
-        async def _gen():
-            await edge_tts.Communicate(text, EDGE_TTS_VOICE).save(tmp)
-        asyncio.run(_gen())
+        last_err = None
+        for attempt in range(1, retries + 2):  # ex: retries=2 → 3 tentatives
+            try:
+                async def _gen():
+                    await edge_tts.Communicate(text, EDGE_TTS_VOICE).save(tmp)
+                asyncio.run(_gen())
+                last_err = None
+                break
+            except Exception as e:
+                last_err = e
+                log.warning(f"[TTS/Edge] Tentative {attempt} échouée : {e}")
+                if attempt <= retries:
+                    time.sleep(0.6)
+        if last_err:
+            raise last_err
         with audio_lock:
             pygame.mixer.music.load(tmp)
             pygame.mixer.music.play()
@@ -245,6 +257,21 @@ def _speak_edge(text: str):
     finally:
         Path(tmp).unlink(missing_ok=True)
 
+def _speak_pyttsx3(text: str):
+    # Fallback hors-ligne via SAPI5 Windows — aucune dépendance réseau.
+    engine = pyttsx3.init()
+    try:
+        # Tenter de sélectionner une voix française si disponible
+        for voice in engine.getProperty('voices'):
+            if 'fr' in (voice.languages[0].decode('utf-8', 'ignore')
+                        if voice.languages else voice.id).lower() or 'french' in voice.name.lower():
+                engine.setProperty('voice', voice.id)
+                break
+        engine.say(text)
+        engine.runAndWait()
+    finally:
+        engine.stop()
+
 def speak_text(text: str):
     def _run():
         with tts_lock:
@@ -252,7 +279,12 @@ def speak_text(text: str):
             try:
                 _speak_edge(text)
             except Exception as e:
-                log.error(f"[TTS/Edge] Erreur : {e}")
+                log.error(f"[TTS/Edge] Échec après retries : {e} — bascule sur pyttsx3 (hors-ligne)")
+                try:
+                    _speak_pyttsx3(text)
+                    log.info("[TTS/pyttsx3] Lecture réussie (fallback)")
+                except Exception as e2:
+                    log.error(f"[TTS/pyttsx3] Échec également : {e2}")
     threading.Thread(target=_run, daemon=True).start()
 # ─────────────────────────────────────────────
 #  AUDIO / MP3 (pygame mixer)
@@ -2479,7 +2511,7 @@ if __name__ == '__main__':
     print(f"  Dossier MP3      : {MP3_DIR}")
     print()
     try:
-        rep = input("  Ouvrir le navigateur ? [o/n] : ").strip().lower()
+        rep = input("  Ouvrir le navigateur ? [O/n] : ").strip().lower()
     except (EOFError, KeyboardInterrupt):
         rep = 'o'
     if rep in ('', 'o', 'oui', 'y', 'yes'):
