@@ -1134,6 +1134,82 @@ def recent_recognitions():
     return jsonify({"recognitions": _last_recognitions})
 
 
+# ── Interphone : client → haut-parleurs serveur ──────────
+import io as _io
+
+_interphone_active  = False   # toggle global
+_interphone_volume  = 0.8     # 0.0 – 1.0
+_interphone_lock    = threading.Lock()
+_interphone_channel = None    # pygame.mixer.Channel dédié
+
+def _get_interphone_channel():
+    """Canal pygame réservé à l'interphone (index 1)."""
+    global _interphone_channel
+    if _interphone_channel is None:
+        pygame.mixer.set_num_channels(max(8, pygame.mixer.get_num_channels()))
+        _interphone_channel = pygame.mixer.Channel(1)
+    return _interphone_channel
+
+@app.route('/interphone/toggle', methods=['POST'])
+@api_auth
+def interphone_toggle():
+    global _interphone_active
+    data = request.get_json(silent=True) or {}
+    _interphone_active = bool(data.get('active', not _interphone_active))
+    if not _interphone_active:
+        try: _get_interphone_channel().stop()
+        except Exception: pass
+    log.info(f"[INTERPHONE] {'Activé' if _interphone_active else 'Désactivé'}")
+    return jsonify({"status": "ok", "active": _interphone_active})
+
+@app.route('/interphone/status')
+@api_auth
+def interphone_status():
+    return jsonify({"active": _interphone_active, "volume": _interphone_volume})
+
+@app.route('/interphone/volume', methods=['POST'])
+@api_auth
+def interphone_set_volume():
+    global _interphone_volume
+    data = request.get_json(silent=True) or {}
+    vol  = max(0.0, min(1.0, float(data.get('volume', _interphone_volume))))
+    _interphone_volume = vol
+    try: _get_interphone_channel().set_volume(vol)
+    except Exception: pass
+    return jsonify({"status": "ok", "volume": vol})
+
+@app.route('/interphone/stream', methods=['POST'])
+@api_auth
+def interphone_stream():
+    """
+    Reçoit un chunk audio brut (PCM16 mono, 16000 Hz) depuis le navigateur client
+    et le joue immédiatement sur les haut-parleurs du serveur.
+    """
+    if not _interphone_active:
+        return jsonify({"status": "off"}), 200
+    data = request.data
+    if not data:
+        return ('', 204)
+    try:
+        with _interphone_lock:
+            # pygame.mixer attend du PCM signé 16-bit
+            # On crée un Sound depuis les bytes bruts
+            sound = pygame.sndarray.make_sound(
+                np.frombuffer(data, dtype=np.int16).reshape(-1, 1)
+                if pygame.mixer.get_init()[2] == 1
+                else np.column_stack([
+                    np.frombuffer(data, dtype=np.int16),
+                    np.frombuffer(data, dtype=np.int16)
+                ])
+            )
+            ch = _get_interphone_channel()
+            ch.set_volume(_interphone_volume)
+            ch.queue(sound)
+    except Exception as e:
+        log.debug(f"[INTERPHONE] Erreur lecture chunk: {e}")
+    return ('', 204)
+
+
 # ── MP3 : stop ────────────────────────────────
 @app.route('/stop_audio', methods=['POST'])
 @api_auth
@@ -1928,8 +2004,9 @@ input[type=file]{{display:none}}
 
     <!-- onglet Ecoute -->
     <div class="tab-content" id="pane-listen">
+      <!-- Écoute micro salle (serveur → client) -->
       <div class="card">
-        <h2>&Eacute;coute micro en direct</h2>
+        <h2>&#127911; &Eacute;coute micro en direct</h2>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <div id="audioIndicator" style="width:8px;height:8px;border-radius:50%;background:#444;flex-shrink:0"></div>
           <span id="audioStatus" style="font-size:.79rem;color:var(--muted)">Non connect&eacute;</span>
@@ -1942,6 +2019,33 @@ input[type=file]{{display:none}}
         </div>
         <div class="btn-row">
           <button class="btn btn-primary" id="btnListen" onclick="toggleListen()">&#127911; &Eacute;couter</button>
+        </div>
+      </div>
+
+      <!-- Interphone : parler vers la salle (client → serveur) -->
+      <div class="card">
+        <h2>&#128226; Interphone</h2>
+        <div style="font-size:.73rem;color:var(--muted);margin-bottom:10px">
+          Votre micro &rarr; haut-parleurs de la salle
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div id="interphoneIndicator" style="width:8px;height:8px;border-radius:50%;background:#444;flex-shrink:0"></div>
+          <span id="interphoneStatus" style="font-size:.79rem;color:var(--muted)">Inactif</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <label style="font-size:.79rem;color:var(--muted);white-space:nowrap">Volume salle</label>
+          <input type="range" id="interphoneVolume" min="0" max="1" step="0.05" value="0.8"
+                 style="flex:1;accent-color:var(--accent2)"
+                 oninput="onInterphoneVolume(this.value)">
+          <span id="interphoneVolLabel" style="font-size:.73rem;color:var(--muted);width:34px;text-align:right">80%</span>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-success" id="btnInterphone" onclick="toggleInterphone()">
+            &#127908; Parler
+          </button>
+        </div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:8px">
+          N&eacute;cessite l&rsquo;autorisation micro du navigateur.
         </div>
       </div>
     </div>
@@ -2867,6 +2971,123 @@ function stopListen() {{
   setAudioStatus('Micro ferme', '#444');
 }}
 
+// ── Interphone (client → serveur) ──────────────
+var _interphoneOn    = false;
+var _mediaRecorder   = null;
+var _interphoneStream = null;
+
+function setInterphoneStatus(text, color) {{
+  var ind = document.getElementById('interphoneIndicator');
+  var lbl = document.getElementById('interphoneStatus');
+  if (ind) ind.style.background = color;
+  if (lbl) lbl.textContent = text;
+}}
+
+function onInterphoneVolume(val) {{
+  document.getElementById('interphoneVolLabel').textContent = Math.round(val * 100) + '%';
+  fetch(SERVER + '/interphone/volume', {{
+    method: 'POST', credentials: 'same-origin',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{volume: parseFloat(val)}})
+  }}).catch(function() {{}});
+}}
+
+async function toggleInterphone() {{
+  if (_interphoneOn) {{
+    stopInterphone();
+  }} else {{
+    await startInterphone();
+  }}
+}}
+
+async function startInterphone() {{
+  if (_interphoneOn) return;
+  try {{
+    _interphoneStream = await navigator.mediaDevices.getUserMedia({{
+      audio: {{
+        channelCount: 1,
+        sampleRate: 16000,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }},
+      video: false
+    }});
+  }} catch(e) {{
+    toast('Micro refusé par le navigateur', 'err');
+    setInterphoneStatus('Accès micro refusé', '#e35b5b');
+    return;
+  }}
+
+  // Activer côté serveur
+  var r = await fetch(SERVER + '/interphone/toggle', {{
+    method: 'POST', credentials: 'same-origin',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{active: true}})
+  }}).catch(function() {{ return null; }});
+  if (!r || !r.ok) {{
+    toast('Erreur activation interphone', 'err');
+    _interphoneStream.getTracks().forEach(function(t) {{ t.stop(); }});
+    return;
+  }}
+
+  _interphoneOn = true;
+  document.getElementById('btnInterphone').textContent = '⏹ Arrêter';
+  document.getElementById('btnInterphone').className = 'btn btn-danger';
+  setInterphoneStatus('🔴 En cours — vous parlez dans la salle', '#e35b5b');
+
+  // MediaRecorder en timeslice : envoie un chunk toutes les 80 ms
+  // On demande PCM via AudioContext + ScriptProcessor pour avoir du raw PCM16
+  var ctx = new (window.AudioContext || window.webkitAudioContext)({{sampleRate: 16000}});
+  var src = ctx.createMediaStreamSource(_interphoneStream);
+  var bufferSize = 2048;
+  var proc = ctx.createScriptProcessor(bufferSize, 1, 1);
+
+  proc.onaudioprocess = function(e) {{
+    if (!_interphoneOn) return;
+    var f32 = e.inputBuffer.getChannelData(0);
+    // Convertir Float32 → Int16 PCM
+    var pcm16 = new Int16Array(f32.length);
+    for (var i = 0; i < f32.length; i++) {{
+      var s = Math.max(-1, Math.min(1, f32[i]));
+      pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }}
+    fetch(SERVER + '/interphone/stream', {{
+      method: 'POST', credentials: 'same-origin',
+      headers: {{'Content-Type': 'application/octet-stream'}},
+      body: pcm16.buffer
+    }}).catch(function() {{}});
+  }};
+
+  src.connect(proc);
+  proc.connect(ctx.destination);
+  // Garder une référence pour pouvoir arrêter
+  _interphoneOn = {{ctx: ctx, proc: proc, src: src}};
+}}
+
+function stopInterphone() {{
+  if (!_interphoneOn) return;
+  // Déconnecter AudioContext
+  if (typeof _interphoneOn === 'object') {{
+    try {{ _interphoneOn.proc.disconnect(); }} catch(e) {{}}
+    try {{ _interphoneOn.src.disconnect(); }} catch(e) {{}}
+    try {{ _interphoneOn.ctx.close(); }} catch(e) {{}}
+  }}
+  _interphoneOn = false;
+  if (_interphoneStream) {{
+    _interphoneStream.getTracks().forEach(function(t) {{ t.stop(); }});
+    _interphoneStream = null;
+  }}
+  fetch(SERVER + '/interphone/toggle', {{
+    method: 'POST', credentials: 'same-origin',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{active: false}})
+  }}).catch(function() {{}});
+  document.getElementById('btnInterphone').textContent = '🎙 Parler';
+  document.getElementById('btnInterphone').className = 'btn btn-success';
+  setInterphoneStatus('Inactif', '#444');
+}}
+
 // Init
 loadVoices();
 loadPhrases();
@@ -2874,6 +3095,24 @@ loadMP3List();
 loadFaceStatus();
 loadFacePeople();
 loadFaceRecent();
+fetch(SERVER + '/interphone/status', {{credentials:'same-origin'}})
+  .then(function(r) {{ return r.json(); }})
+  .then(function(d) {{
+    if (d.active) {{
+      setInterphoneStatus('Actif (session précédente)', '#f0a500');
+      // Réinitialiser côté serveur au cas où
+      fetch(SERVER + '/interphone/toggle', {{
+        method:'POST', credentials:'same-origin',
+        headers:{{'Content-Type':'application/json'}},
+        body:JSON.stringify({{active:false}})
+      }});
+    }}
+    var vol = d.volume || 0.8;
+    var sl = document.getElementById('interphoneVolume');
+    var lb = document.getElementById('interphoneVolLabel');
+    if (sl) sl.value = vol;
+    if (lb) lb.textContent = Math.round(vol * 100) + '%';
+  }}).catch(function() {{}});
 </script>
 </body>
 </html>'''
