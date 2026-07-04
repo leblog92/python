@@ -1,4 +1,5 @@
 import cv2
+import re
 import flask
 import numpy as np
 import datetime
@@ -521,6 +522,7 @@ def detect_motion(current_frame):
 def generate_frames():
     global motion_detected, _latest_frame
     motion_cooldown = 0
+    face_frame_skip = 0   # reconnaissance faciale : 1 frame analysée sur 6 (coût LBPH)
     frame_count = 0
     log.info("[STREAM] generate_frames() démarré")
     while True:
@@ -549,6 +551,16 @@ def generate_frames():
                         motion_cooldown = 30
                 if motion_cooldown > 0:
                     motion_cooldown -= 1
+                # Reconnaissance faciale (coûteuse — 1 frame sur 6)
+                if FACE_RECOGNITION_ENABLED:
+                    face_frame_skip += 1
+                    if face_frame_skip >= 6:
+                        face_frame_skip = 0
+                        frame, recognized = recognize_faces(frame)
+                        if recognized:
+                            log.info(f"[FACE] Reconnu(e) : {', '.join(recognized)}")
+                            save_capture(frame)
+                            _trigger_face_alert(recognized)
             q      = QUALITY_PRESETS[stream_quality]
             # Limite fps selon le preset (fps_div=2 → on saute 1 frame sur 2)
             if frame_count % q["fps_div"] != 0:
@@ -820,6 +832,163 @@ def get_absent_mode():
     return jsonify({"absent": ABSENT_MODE})
 
 
+# ── Reconnaissance faciale ────────────────────
+# Détection : Haar Cascade (livré avec OpenCV, aucun téléchargement)
+# Reconnaissance : LBPH (cv2.face, déjà dans opencv-contrib-python)
+FACES_DIR     = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'faces')
+FACES_RAW_DIR = os.path.join(FACES_DIR, 'photos')      # photos brutes par personne
+FACES_MODEL   = os.path.join(FACES_DIR, 'model.yml')   # modèle LBPH entraîné
+FACES_LABELS  = os.path.join(FACES_DIR, 'labels.json') # id numérique → nom
+os.makedirs(FACES_RAW_DIR, exist_ok=True)
+os.makedirs(os.path.join(FACES_DIR, 'sounds'), exist_ok=True)
+
+_face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+_face_recognizer = None     # créé/chargé à la demande
+_face_labels      = {}      # {id: "Nom"}
+_face_lock        = threading.Lock()
+FACE_RECOGNITION_ENABLED = False    # toggle global activable depuis l'UI
+FACE_CONFIDENCE_THRESHOLD = 70      # LBPH : plus bas = plus strict (0=identique)
+
+_last_recognitions = []     # historique court {name, ts} pour l'UI
+MAX_RECOGNITIONS_LOG = 20
+_face_alert_cooldowns = {}  # {name: timestamp dernière alerte}
+FACE_ALERT_COOLDOWN_S = 60
+
+def _trigger_face_alert(names):
+    """Joue un son par personne reconnue (si <nom>.mp3 existe), avec cooldown 60s/personne."""
+    now = time.time()
+    for name in names:
+        last = _face_alert_cooldowns.get(name, 0)
+        if now - last < FACE_ALERT_COOLDOWN_S:
+            continue
+        _face_alert_cooldowns[name] = now
+        # Cherche un son nominatif optionnel : faces/sounds/<nom>.mp3
+        sound_path = os.path.join(FACES_DIR, 'sounds', f"{name}.mp3")
+        if os.path.exists(sound_path):
+            play_mp3_file(sound_path)
+
+def _load_face_labels():
+    global _face_labels
+    if os.path.exists(FACES_LABELS):
+        try:
+            with open(FACES_LABELS, 'r', encoding='utf-8') as f:
+                _face_labels = {int(k): v for k, v in json.load(f).items()}
+        except Exception as e:
+            log.error(f"[FACE] Erreur lecture labels: {e}")
+            _face_labels = {}
+    else:
+        _face_labels = {}
+
+def _save_face_labels():
+    with open(FACES_LABELS, 'w', encoding='utf-8') as f:
+        json.dump({str(k): v for k, v in _face_labels.items()}, f, ensure_ascii=False, indent=2)
+
+def _load_face_model():
+    """Charge le modèle LBPH s'il existe."""
+    global _face_recognizer
+    if not os.path.exists(FACES_MODEL):
+        _face_recognizer = None
+        return False
+    try:
+        rec = cv2.face.LBPHFaceRecognizer_create()
+        rec.read(FACES_MODEL)
+        _face_recognizer = rec
+        log.info("[FACE] Modèle chargé")
+        return True
+    except Exception as e:
+        log.error(f"[FACE] Erreur chargement modèle: {e}")
+        _face_recognizer = None
+        return False
+
+def train_face_model():
+    """
+    Reconstruit le modèle LBPH à partir de toutes les photos dans FACES_RAW_DIR/<nom>/*.jpg
+    Appelé après ajout/suppression de personnes.
+    """
+    global _face_recognizer, _face_labels
+    with _face_lock:
+        people = sorted([d for d in os.listdir(FACES_RAW_DIR)
+                         if os.path.isdir(os.path.join(FACES_RAW_DIR, d))])
+        if not people:
+            _face_recognizer = None
+            _face_labels = {}
+            for f in (FACES_MODEL, FACES_LABELS):
+                Path(f).unlink(missing_ok=True)
+            log.info("[FACE] Aucune personne enregistrée — modèle réinitialisé")
+            return True
+
+        faces_data, ids, labels = [], [], {}
+        for idx, person in enumerate(people):
+            labels[idx] = person
+            person_dir = os.path.join(FACES_RAW_DIR, person)
+            for fname in os.listdir(person_dir):
+                if not fname.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    continue
+                img_path = os.path.join(person_dir, fname)
+                img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+                if img is None:
+                    continue
+                detected = _face_cascade.detectMultiScale(img, 1.1, 5, minSize=(60, 60))
+                if len(detected) == 0:
+                    # Pas de visage détecté — utiliser l'image entière en dernier recours
+                    face_roi = cv2.resize(img, (200, 200))
+                else:
+                    (x, y, w, h) = max(detected, key=lambda r: r[2] * r[3])
+                    face_roi = cv2.resize(img[y:y+h, x:x+w], (200, 200))
+                faces_data.append(face_roi)
+                ids.append(idx)
+
+        if not faces_data:
+            log.warning("[FACE] Aucun visage exploitable dans les photos fournies")
+            return False
+
+        rec = cv2.face.LBPHFaceRecognizer_create()
+        rec.train(faces_data, np.array(ids))
+        rec.write(FACES_MODEL)
+        _face_recognizer = rec
+        _face_labels = labels
+        _save_face_labels()
+        log.info(f"[FACE] Modèle entraîné : {len(people)} personne(s), {len(faces_data)} photo(s)")
+        return True
+
+def recognize_faces(frame):
+    """
+    Détecte et identifie les visages dans une frame BGR.
+    Retourne (frame_annotée, liste de noms reconnus dans cette frame).
+    """
+    global _last_recognitions
+    if frame is None or not FACE_RECOGNITION_ENABLED:
+        return frame, []
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    detected = _face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(80, 80))
+    recognized_names = []
+    output = frame.copy()
+    for (x, y, w, h) in detected:
+        name = "Inconnu"
+        color = (0, 165, 255)  # orange = non identifié
+        if _face_recognizer is not None and _face_labels:
+            try:
+                face_roi = cv2.resize(gray[y:y+h, x:x+w], (200, 200))
+                label_id, confidence = _face_recognizer.predict(face_roi)
+                if confidence < FACE_CONFIDENCE_THRESHOLD and label_id in _face_labels:
+                    name = _face_labels[label_id]
+                    color = (0, 220, 0)  # vert = identifié
+                    recognized_names.append(name)
+            except Exception as e:
+                log.debug(f"[FACE] Erreur prediction: {e}")
+        cv2.rectangle(output, (x, y), (x + w, y + h), color, 2)
+        cv2.putText(output, name, (x, y - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+    if recognized_names:
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        for name in recognized_names:
+            _last_recognitions.insert(0, {"name": name, "time": ts})
+        _last_recognitions = _last_recognitions[:MAX_RECOGNITIONS_LOG]
+    return output, recognized_names
+
+_load_face_labels()
+_load_face_model()
+
+
 # ── Snapshot à la demande ────────────────────
 SNAPSHOTS_DIR = os.path.join(user_profile, 'Pictures', 'jvo_snapshots')
 os.makedirs(SNAPSHOTS_DIR, exist_ok=True)
@@ -876,6 +1045,93 @@ def delete_snapshot(filename):
         return jsonify({"status": "ok"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ── Reconnaissance faciale : API ──────────────
+@app.route('/faces/toggle', methods=['POST'])
+@api_auth
+def toggle_face_recognition():
+    global FACE_RECOGNITION_ENABLED
+    data = request.get_json(silent=True) or {}
+    FACE_RECOGNITION_ENABLED = bool(data.get('active', not FACE_RECOGNITION_ENABLED))
+    log.info(f"[FACE] Reconnaissance {'activée' if FACE_RECOGNITION_ENABLED else 'désactivée'}")
+    return jsonify({"status": "ok", "active": FACE_RECOGNITION_ENABLED})
+
+@app.route('/faces/status')
+@api_auth
+def face_status():
+    return jsonify({
+        "active": FACE_RECOGNITION_ENABLED,
+        "model_ready": _face_recognizer is not None,
+        "people": sorted(_face_labels.values()) if _face_labels else []
+    })
+
+@app.route('/faces/people')
+@api_auth
+def list_face_people():
+    """Liste les personnes enregistrées avec leur nombre de photos."""
+    result = []
+    if os.path.isdir(FACES_RAW_DIR):
+        for person in sorted(os.listdir(FACES_RAW_DIR)):
+            person_dir = os.path.join(FACES_RAW_DIR, person)
+            if os.path.isdir(person_dir):
+                n = len([f for f in os.listdir(person_dir)
+                         if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+                result.append({"name": person, "photos": n})
+    return jsonify({"people": result})
+
+@app.route('/faces/add', methods=['POST'])
+@api_auth
+def add_face_photo():
+    """
+    POST multipart/form-data : name=<nom>, file=<image>
+    Ajoute une photo à la collection d'une personne (créée si besoin).
+    """
+    name = request.form.get('name', '').strip()
+    if not name or not re.match(r'^[\w\-éèêàâîïôûç ]{1,40}$', name, re.IGNORECASE):
+        return jsonify({"status": "error", "message": "Nom invalide (lettres, chiffres, espaces, tirets)"}), 400
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "Fichier manquant"}), 400
+    file = request.files['file']
+    safe_name = name.strip()
+    person_dir = os.path.join(FACES_RAW_DIR, safe_name)
+    os.makedirs(person_dir, exist_ok=True)
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    ext = os.path.splitext(file.filename)[1].lower() or '.jpg'
+    if ext not in ('.jpg', '.jpeg', '.png'):
+        ext = '.jpg'
+    dest = os.path.join(person_dir, f"{ts}{ext}")
+    file.save(dest)
+    log.info(f"[FACE] Photo ajoutée pour '{safe_name}'")
+    return jsonify({"status": "ok", "name": safe_name})
+
+@app.route('/faces/train', methods=['POST'])
+@api_auth
+def retrain_faces():
+    """Relance l'entraînement du modèle à partir des photos actuelles."""
+    ok = train_face_model()
+    if ok:
+        return jsonify({"status": "ok", "people": list(_face_labels.values())})
+    return jsonify({"status": "error", "message": "Échec entraînement (vérifier les photos)"}), 500
+
+@app.route('/faces/person/<name>', methods=['DELETE'])
+@api_auth
+def delete_face_person(name):
+    """Supprime une personne (toutes ses photos) puis ré-entraîne."""
+    safe = os.path.basename(name)
+    person_dir = os.path.join(FACES_RAW_DIR, safe)
+    if not os.path.isdir(person_dir):
+        return jsonify({"status": "error", "message": "Personne introuvable"}), 404
+    import shutil
+    shutil.rmtree(person_dir, ignore_errors=True)
+    train_face_model()
+    log.info(f"[FACE] Personne '{safe}' supprimée")
+    return jsonify({"status": "ok"})
+
+@app.route('/faces/recent')
+@api_auth
+def recent_recognitions():
+    return jsonify({"recognitions": _last_recognitions})
 
 
 # ── MP3 : stop ────────────────────────────────
@@ -1469,6 +1725,7 @@ input[type=file]{{display:none}}
       <div class="tab"        id="tab-mp3"    onclick="switchTab('mp3')">&#127925; MP3</div>
       <div class="tab"        id="tab-timer"  onclick="switchTab('timer')">&#9201; Timer</div>
       <div class="tab"        id="tab-cam"    onclick="switchTab('cam')">&#128247; Cam</div>
+      <div class="tab"        id="tab-faces"  onclick="switchTab('faces')">&#128100; Visages</div>
       <div class="tab"        id="tab-listen" onclick="switchTab('listen')">&#127911; &Eacute;coute</div>
     </div>
 
@@ -1623,6 +1880,50 @@ input[type=file]{{display:none}}
         </div>
       </div>
 
+    </div>
+
+    <!-- onglet Visages -->
+    <div class="tab-content" id="pane-faces">
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <h2 style="margin:0">&#128100; Reconnaissance faciale</h2>
+            <div style="font-size:.72rem;color:var(--muted);margin-top:2px" id="faceModelStatus">
+              Mod&egrave;le non entra&icirc;n&eacute;
+            </div>
+          </div>
+          <div class="toggle-pill" id="faceToggle" onclick="toggleFaceRecognition()"></div>
+        </div>
+        <div id="faceActiveStatus" style="font-size:.73rem;color:var(--muted);margin-top:6px">D&eacute;sactiv&eacute;e</div>
+      </div>
+
+      <div class="card">
+        <h2>Ajouter une personne</h2>
+        <input type="text" id="facePersonName" placeholder="Nom de la personne"
+               style="margin-bottom:8px">
+        <label class="upload-area" for="faceFileInput" id="faceDropZone">
+          Cliquez ou d&eacute;posez 3-5 photos du visage
+        </label>
+        <input type="file" id="faceFileInput" accept=".jpg,.jpeg,.png" multiple
+               onchange="uploadFacePhotos(this.files)">
+        <div style="font-size:.71rem;color:var(--muted);margin-top:6px">
+          Photos nettes, visage de face, bon &eacute;clairage recommand&eacute;es.
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <h2 style="margin:0">Personnes enregistr&eacute;es</h2>
+          <button class="btn btn-success" style="padding:4px 10px;font-size:.78rem"
+                  onclick="retrainFaceModel()">&#128260; Entra&icirc;ner</button>
+        </div>
+        <div id="facePeopleList" style="display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+
+      <div class="card">
+        <h2>Derni&egrave;res identifications</h2>
+        <div id="faceRecentList" style="font-size:.78rem;color:var(--muted)">Aucune</div>
+      </div>
     </div>
 
     <!-- onglet Ecoute -->
@@ -1974,6 +2275,145 @@ function updateAbsentUI() {{
   }}
 }}
 
+// ── Reconnaissance faciale ──────────────────────
+var _faceActive = false;
+
+async function toggleFaceRecognition() {{
+  _faceActive = !_faceActive;
+  try {{
+    var r = await fetch(SERVER + '/faces/toggle', {{
+      method: 'POST', credentials: 'same-origin',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{active: _faceActive}})
+    }});
+    var d = await r.json();
+    _faceActive = d.active;
+    updateFaceUI();
+    toast(_faceActive ? '👤 Reconnaissance activée' : '👤 Reconnaissance désactivée');
+  }} catch(e) {{ toast('Connexion impossible', 'err'); _faceActive = !_faceActive; }}
+}}
+
+function updateFaceUI() {{
+  var tog = document.getElementById('faceToggle');
+  var lbl = document.getElementById('faceActiveStatus');
+  if (!tog) return;
+  if (_faceActive) {{
+    tog.classList.add('on');
+    lbl.textContent = '🔴 Active — identification en continu (charge CPU modérée)';
+    lbl.style.color = 'var(--red)';
+  }} else {{
+    tog.classList.remove('on');
+    lbl.textContent = 'Désactivée';
+    lbl.style.color = 'var(--muted)';
+  }}
+}}
+
+async function loadFaceStatus() {{
+  try {{
+    var r = await fetch(SERVER + '/faces/status', {{credentials:'same-origin'}});
+    var d = await r.json();
+    _faceActive = d.active;
+    updateFaceUI();
+    var ms = document.getElementById('faceModelStatus');
+    if (ms) {{
+      ms.textContent = d.model_ready
+        ? '✓ Modèle prêt — ' + d.people.length + ' personne(s)'
+        : 'Modèle non entraîné';
+    }}
+  }} catch(e) {{}}
+}}
+
+async function uploadFacePhotos(files) {{
+  var name = document.getElementById('facePersonName').value.trim();
+  if (!name) {{ toast('Indiquez un nom', 'err'); return; }}
+  if (!files || !files.length) return;
+  var ok = 0;
+  for (var i = 0; i < files.length; i++) {{
+    var fd = new FormData();
+    fd.append('name', name);
+    fd.append('file', files[i]);
+    try {{
+      var r = await fetch(SERVER + '/faces/add', {{
+        method: 'POST', credentials: 'same-origin', body: fd
+      }});
+      var d = await r.json();
+      if (d.status === 'ok') ok++;
+    }} catch(e) {{}}
+  }}
+  toast(ok + ' photo(s) ajoutée(s) pour ' + name);
+  document.getElementById('faceFileInput').value = '';
+  loadFacePeople();
+}}
+
+async function retrainFaceModel() {{
+  toast('Entraînement en cours…');
+  try {{
+    var r = await fetch(SERVER + '/faces/train', {{method:'POST', credentials:'same-origin'}});
+    var d = await r.json();
+    if (d.status === 'ok') {{
+      toast('✓ Modèle entraîné (' + d.people.length + ' personne(s))');
+      loadFaceStatus();
+    }} else {{
+      toast('Erreur : ' + d.message, 'err');
+    }}
+  }} catch(e) {{ toast('Connexion impossible', 'err'); }}
+}}
+
+async function loadFacePeople() {{
+  try {{
+    var r = await fetch(SERVER + '/faces/people', {{credentials:'same-origin'}});
+    var d = await r.json();
+    var wrap = document.getElementById('facePeopleList');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    if (!d.people.length) {{
+      wrap.innerHTML = '<span style="font-size:.78rem;color:var(--muted)">Aucune personne enregistrée</span>';
+      return;
+    }}
+    d.people.forEach(function(p) {{
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;'
+        + 'background:#111;border:1px solid var(--border);border-radius:7px;padding:7px 10px';
+      var info = document.createElement('span');
+      info.style.fontSize = '.82rem';
+      info.textContent = p.name + ' (' + p.photos + ' photo' + (p.photos > 1 ? 's' : '') + ')';
+      var del = document.createElement('button');
+      del.className = 'quick-del'; del.title = 'Supprimer'; del.textContent = '\\u00d7';
+      del.onclick = (function(name) {{ return function() {{ deleteFacePerson(name); }}; }})(p.name);
+      row.appendChild(info); row.appendChild(del);
+      wrap.appendChild(row);
+    }});
+  }} catch(e) {{}}
+}}
+
+async function deleteFacePerson(name) {{
+  if (!confirm('Supprimer ' + name + ' et toutes ses photos ?')) return;
+  try {{
+    var r = await fetch(SERVER + '/faces/person/' + encodeURIComponent(name),
+                         {{method:'DELETE', credentials:'same-origin'}});
+    var d = await r.json();
+    if (d.status === 'ok') {{ toast('Personne supprimée'); loadFacePeople(); loadFaceStatus(); }}
+    else toast('Erreur suppression', 'err');
+  }} catch(e) {{ toast('Connexion impossible', 'err'); }}
+}}
+
+async function loadFaceRecent() {{
+  try {{
+    var r = await fetch(SERVER + '/faces/recent', {{credentials:'same-origin'}});
+    var d = await r.json();
+    var wrap = document.getElementById('faceRecentList');
+    if (!wrap) return;
+    if (!d.recognitions.length) {{
+      wrap.textContent = 'Aucune identification récente';
+      return;
+    }}
+    wrap.innerHTML = d.recognitions.map(function(r) {{
+      return '<div style="padding:3px 0">' + r.time + ' — <strong style="color:var(--accent2)">'
+        + r.name + '</strong></div>';
+    }}).join('');
+  }} catch(e) {{}}
+}}
+
 // ── Collapse cards ───────────────────────────
 function collapseCard(id) {{
   var card = document.getElementById(id);
@@ -2309,6 +2749,11 @@ setInterval(function() {{
       .then(function(d) {{ buildTimerLog(d.log || []); }}).catch(function() {{}});
 }}, 30000);
 
+setInterval(function() {{
+  var p = document.getElementById('pane-faces');
+  if (p && p.classList.contains('active')) loadFaceRecent();
+}}, 5000);
+
 // Qualite video
 var QL = {{hd:'HD 960x540 ~13 Mbit/s', medium:'Moyen 640x360 ~4 Mbit/s', low:'Eco 480x270 ~1 Mbit/s'}};
 async function setQuality(q) {{
@@ -2426,6 +2871,9 @@ function stopListen() {{
 loadVoices();
 loadPhrases();
 loadMP3List();
+loadFaceStatus();
+loadFacePeople();
+loadFaceRecent();
 </script>
 </body>
 </html>'''
