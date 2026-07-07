@@ -4,20 +4,12 @@
     "text": "Bonjour, bienvenue aux ateliers multimédia ! Un membre du personnel va arriver dans quelques instants. Veuillez patienter !"
   },
   {
-    "id": 16,
-    "text": "Bonjour, l'aide informatique va commencer à 14 heures."
-  },
-  {
-    "id": 13,
-    "text": "Les chaises ne doivent pas sortir de la salle. Veuillez la reposer."
-  },
-  {
-    "id": 17,
-    "text": "Bonjour, l'heure de code commencera à 14 heures !"
-  },
-  {
     "id": 4,
     "text": "Attention, la salle fermera dans quelques minutes !",
     "visible": true
+  },
+  {
+    "id": 10,
+    "text": "01 47 14 54 54"
   }
 ]
