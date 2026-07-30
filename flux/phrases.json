@@ -4,12 +4,28 @@
     "text": "Bonjour, bienvenue aux ateliers multimédia ! Un membre du personnel va arriver dans quelques instants. Veuillez patienter !"
   },
   {
+    "id": 10,
+    "text": "Bonjour, bienvenue dans la salle jeux vidéo. Un membre du personnel sera là dans quelques instant."
+  },
+  {
+    "id": 12,
+    "text": "Certains suscitent le bonheur partout où ils vont, d'autres dès qu'ils s'en vont."
+  },
+  {
+    "id": 13,
+    "text": "J'adore les plaisirs tout simples ; ils constituent le dernier refuge des êtres complexes."
+  },
+  {
+    "id": 14,
+    "text": "Pardonne toujours à tes ennemis - Il n'est rien qui puisse les contrarier autant."
+  },
+  {
+    "id": 15,
+    "text": "La chance n'existe pas ; ce que vous appelez chance, c'est l'attention aux détails."
+  },
+  {
     "id": 4,
     "text": "Attention, la salle fermera dans quelques minutes !",
     "visible": true
-  },
-  {
-    "id": 10,
-    "text": "01 47 14 54 54"
   }
 ]
