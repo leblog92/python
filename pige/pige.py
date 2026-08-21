@@ -1,48 +1,3 @@
-"""
-═══════════════════════════════════════════════════════════════════════════
-  P.I.G.E. — Programme Intelligent de Guet et d'Écoute
-  Surveillance 24/24 d'un couple de pigeons ramiers, corniche de la médiathèque
-═══════════════════════════════════════════════════════════════════════════
- 
-Caméra visée : Logitech C270 HD 720p (webcam USB standard, gérée nativement
-par OpenCV/DirectShow — aucun pilote particulier à installer).
-Python recommandé : 3.12 (voir requirements.txt et install_pige.bat).
- 
-  - Flux vidéo en direct (webcam USB, OpenCV/DirectShow)
-  - Détection de mouvement (seuil abaissé : un oiseau est bien plus petit
-    qu'une silhouette humaine — à réajuster selon la distance caméra↔nid)
-  - Captures d'images déclenchées par le mouvement (nourrissage, couvaison…)
-  - Snapshot à la demande + galerie
-  - Écoute audio en direct (micro de la caméra → navigateur), utile pour
-    entendre les cris/pépiements si la caméra est bien positionnée près du nid
-  - Protection par mot de passe optionnelle, tunnel ngrok optionnel
-  - Contrôle de la qualité vidéo (bande passante)
-  - Boucle de capture caméra indépendante des visiteurs de la page web :
-    dans le script original, chaque connexion au flux vidéo relançait sa
-    propre lecture caméra — si personne ne regardait la page, rien n'était
-    enregistré. Ici, une unique boucle tourne en arrière-plan en permanence
-    et alimente le flux, les captures et le timelapse, que quelqu'un
-    regarde ou non.
-  - Timelapse : une image capturée à intervalle régulier (1/minute par
-    défaut), avec génération à la demande d'une vidéo timelapse par journée.
-  - Journal d'activité (horodatage des détections de mouvement).
- 
-CONFIGURATION (fichier ngrok_token.env à côté de pige.py, toutes les clés sont
-optionnelles) :
-  PIGE_PASSWORD          mot de passe de l'interface web (vide = accès libre, LAN uniquement)
-  FLASK_SECRET_KEY       clé de session Flask (générée aléatoirement sinon)
-  NGROK_TOKEN            jeton ngrok pour un accès distant (nécessite ngrok.exe à côté du script)
-  PIGE_NETWORK_HTML_DIR  dossier réseau où déposer pige.html (par défaut : le dossier
-                         "ESPACE_SCI" de la médiathèque, voir DEFAULT_NETWORK_HTML_DIR
-                         plus bas dans le code ; repli en local si inaccessible)
- 
-DÉPENDANCES PYTHON :
-  pip install opencv-contrib-python flask numpy python-dotenv sounddevice
-  (opencv-contrib-python n'est plus indispensable pour la reconnaissance
-  faciale ici, mais opencv-python suffit largement — la version "contrib"
-  ne pose pas de problème si déjà installée.)
-"""
- 
 import cv2
 import re
 import flask
@@ -62,7 +17,6 @@ import traceback
 import sys
 import secrets
 import shutil
-import webbrowser
 from flask import (
     Response, request, jsonify, stream_with_context,
     session, redirect, url_for, send_file
@@ -1639,17 +1593,6 @@ if __name__ == '__main__':
     print(f"  Dossier captures : {motion_captures_dir}")
     print(f"  Dossier timelapse: {TIMELAPSE_DIR}")
     print()
-    try:
-        rep = input("  Ouvrir le navigateur ? [O/n] : ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        rep = 'o'
-    if rep in ('', 'o', 'oui', 'y', 'yes'):
-        try:
-            webbrowser.open(local_url)
-            print("  Navigateur ouvert.\n")
-        except Exception as e:
-            print(f"  Impossible d'ouvrir le navigateur : {e}\n")
-    else:
-        print("  Navigateur non ouvert.\n")
+    log.info("[DEMARRAGE] Aucune ouverture automatique du navigateur — connectez-vous via l'URL ci-dessus.")
  
     app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
