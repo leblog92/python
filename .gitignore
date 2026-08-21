@@ -30,3 +30,4 @@ __pycache__/
 .idea/
 *.swp
 *.jpg
+pige/ngrok_token.txt
