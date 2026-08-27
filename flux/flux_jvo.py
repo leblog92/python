@@ -419,7 +419,7 @@ def save_html_file():
 </html>'''
 
     # Essayer d'écrire sur le lecteur réseau, sinon en local
-    destination_path = r"L:\Groups\mediatheque\06- SECTEUR INFORMATIQUE\7- SALLE JVO"
+    destination_path = r"L:\Groups\mediatheque\06- SECTEUR INFORMATIQUE\7- ATELIERS MULTIMEDIA\4- SALLE JVO"
     if not os.path.exists(destination_path):
         print(f"Chemin réseau inaccessible, sauvegarde locale.")
         destination_path = "."
@@ -1337,7 +1337,7 @@ def set_mp3_order():
 
 
 # ── Timer VGT ─────────────────────────────────
-import pytz as _pytz
+# Pas de pytz/zoneinfo — datetime.now() utilise l'heure locale Windows (déjà Europe/Paris)
 
 _TIMER_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'timer_schedule.json')
 _TIMER_DEFAULT = [
@@ -1382,11 +1382,10 @@ def _save_timer_schedule(s):
 
 def _timer_loop():
     global _timer_fired
-    paris = _pytz.timezone('Europe/Paris')
     last_day = None
     while True:
         try:
-            now   = datetime.datetime.now(paris)
+            now   = datetime.datetime.now()   # heure locale Windows = Europe/Paris
             today = now.strftime("%Y-%m-%d")
             hm    = now.strftime("%H:%M")
             if last_day != today:
