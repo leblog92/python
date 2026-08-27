@@ -1,0 +1,20 @@
+Requirements · TXT
+# P.I.G.E. — Programme Intelligent de Guet et d'Écoute
+# Dépendances Python pour nichoir_pigeon.py
+#
+# Python recommandé : 3.12 (voir install.bat, qui l'installe automatiquement
+# si besoin). Compatible aussi avec 3.11 et 3.13, mais numpy a cessé de
+# publier des paquets précompilés ("wheels") pour 3.11 mi-2026 : sous 3.11,
+# pip installera automatiquement la dernière version encore compatible
+# (numpy 2.4.x) au lieu de la toute dernière — sans casser le programme.
+#
+# Installation manuelle (si vous n'utilisez pas install.bat) :
+#   python -m venv venv
+#   venv\Scripts\activate
+#   pip install -r requirements.txt
+ 
+flask>=3.0
+opencv-python>=4.9
+numpy>=1.26,<3
+python-dotenv>=1.0
+sounddevice>=0.4.6
