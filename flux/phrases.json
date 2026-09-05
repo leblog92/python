@@ -27,5 +27,9 @@
     "id": 4,
     "text": "Attention, la salle fermera dans quelques minutes !",
     "visible": true
+  },
+  {
+    "id": 16,
+    "text": "Les annonces Leboncoin sont interdites dans la salle informatique."
   }
 ]
